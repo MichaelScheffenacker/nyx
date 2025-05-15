@@ -1,22 +1,23 @@
 // server
 const std = @import("std");
 
-const len: usize = 1024;
+const len: usize = 400;
 
 pub fn main() !void {
-    
-    
     var buf = [_]u8{0} ** len;
     
     const client_ipv6_addr = 0x0000_0000_0000_0000_0000_0000_0000_0000;
     const listen_socket = try PosixSocketFacade.init();
     try listen_socket.bind(client_ipv6_addr, 5001);
+
     while (true) {
         buf = [_]u8{0} ** len;
-        const client_socket_address = try listen_socket.receive(buf[0..len]);
-        std.debug.print("{s} {any}\n", .{buf, buf.len});
+        const client_socket_address = try listen_socket.receiveFrom(buf[0..]);
+        std.debug.print("{s} ({any})\n", .{buf, buf.len});
+
         for (5..8) |i| buf[i] = '0';
         try listen_socket.sendTo(buf, client_socket_address);
+
         //todo: remove sleep when everything is stable
         std.time.sleep(200 * std.time.ns_per_ms);
     }
@@ -62,13 +63,14 @@ const PosixSocketFacade = struct{
         );
     }
 
-    fn receive(self: PosixSocketFacade, buf: []u8) !std.posix.sockaddr.in6 {
+    fn receiveFrom(self: PosixSocketFacade, buf: []u8) !std.posix.sockaddr.in6 {
         // todo: it should be possible to initialize sender_addr with 0
         var sender_in6_addr: std.posix.sockaddr.in6 = undefined;
         // see the comment in bind() for the oblique pointer
         const sender_oblique_addr_p: *std.posix.sockaddr = @ptrCast(&sender_in6_addr);
-        // the "returned" address size is ignored; ipv6 is assumed
+        // recvfrom() rejects an uninitialized sender_addr_size; unsure why
         var sender_addr_size: std.posix.socklen_t = @sizeOf(std.posix.sockaddr.in6);
+
         const message_len = try std.posix.recvfrom(
             self.socket_fd,
             buf,
@@ -81,12 +83,17 @@ const PosixSocketFacade = struct{
         // _ = sender_addr_len;
         std.debug.print("{any} ", .{message_len});
 
+        if (sender_addr_size != @sizeOf(std.posix.sockaddr.in6)) {
+            return error.UnsupportedAddressFamily;
+        }
+
         return sender_in6_addr;
     }
 
     fn sendTo(self: PosixSocketFacade, buf: [len]u8, dest_addr: std.posix.sockaddr.in6) !void {
         // see the comment in bind() for the oblique pointer
         const dest_oblique_addr_p: *const std.posix.sockaddr = @ptrCast(&dest_addr);
+
         _ = try std.posix.sendto(
             self.socket_fd,
             &buf,
@@ -128,12 +135,14 @@ test "ipv6_natural_2_ipv6_posix" {
     for (result, expected) |res, exp| {
         try std.testing.expect( res == exp);
     }
+
     const ipv6_0 = 0x0000_0000_0000_0000_0000_0000_0000_0000;
     const result0 = PosixSocketFacade.ipv6_natural_2_ipv6_posix(ipv6_0);
     const expected0 = [_]u8{0} ** 16;
     for (result0, expected0) |res, exp| {
         try std.testing.expect( res == exp);
     }
+
     const ipv6_1 = 0x0000_0000_0000_0000_0000_0000_0000_0001;
     const result1 = PosixSocketFacade.ipv6_natural_2_ipv6_posix(ipv6_1);
     const expected1 = [_]u8{0} ** 15 ++ [_]u8{1};
