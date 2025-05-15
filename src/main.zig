@@ -94,12 +94,13 @@ const PosixSocketFacade = struct{
 
         // the by std.posix required [16]u8 ipv6 contradicts the by convention
         // of writing ipv6 addresses as 8 hex quartets
+        var address_bits = ipv6;
         var ipv6_posix = [_]u8{0} ** 16;
-        for (ipv6, 0..) |quartet, i| {
-            const upper_halfquartet: u16 = quartet / 0x100;
-            const lower_halfquartet: u16 = quartet - upper_halfquartet * 0x100;
-            ipv6_posix[i*2] = @truncate(upper_halfquartet);
-            ipv6_posix[i*2 + 1] = @truncate(lower_halfquartet);
+        const offset = ipv6_posix.len - 1;
+        const bits_in_halfquartet = 8;
+        for (ipv6_posix, 0..) |_, i| {
+            ipv6_posix[offset - i] = @truncate(address_bits);
+            address_bits = address_bits >> bits_in_halfquartet;
         }
         return ipv6_posix;
     }
@@ -113,4 +114,22 @@ fn print_addr(addr_val: [16]u8) void {
         }
     }
     std.debug.print("\n\n{any}\n\n\n", .{addr_val});
+}
+
+test "ipv6_natural_2_ipv6_posix" {
+    const result = PosixSocketFacade.ipv6_natural_2_ipv6_posix(0x1234_5678_9abc_def0_1234_5678_9abc_def0);
+    const expected = [16]u8{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0 };
+    for (result, expected) |res, exp| {
+        try std.testing.expect( res == exp);
+    }
+    const result0 = PosixSocketFacade.ipv6_natural_2_ipv6_posix(0x0000_0000_0000_0000_0000_0000_0000_0000);
+    const expected0 = [_]u8{0} ** 16;
+    for (result0, expected0) |res, exp| {
+        try std.testing.expect( res == exp);
+    }
+    const result1 = PosixSocketFacade.ipv6_natural_2_ipv6_posix(0x0000_0000_0000_0000_0000_0000_0000_0001);
+    const expected1 = [_]u8{0} ** 15 ++ [_]u8{1};
+    for (result1, expected1) |res, exp| {
+        try std.testing.expect( res == exp);
+    }
 }
