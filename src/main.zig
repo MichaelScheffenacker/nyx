@@ -8,8 +8,7 @@ pub fn main() !void {
     
     var buf = [_]u8{0} ** len;
     
-    // const client_ipv6_addr = [8]u16{ 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000 };
-    const client_ipv6_addr = [_]u8{0} ** 16;
+    const client_ipv6_addr = 0x0000_0000_0000_0000_0000_0000_0000_0000;
     const listen_socket = try PosixSocketFacade.init();
     try listen_socket.bind(client_ipv6_addr, 5001);
     while (true) {
@@ -18,6 +17,7 @@ pub fn main() !void {
         std.debug.print("{s} {any}\n", .{buf, buf.len});
         for (5..8) |i| buf[i] = '0';
         try listen_socket.sendTo(buf, client_socket_address);
+        //todo: remove sleep when everything is stable
         std.time.sleep(200 * std.time.ns_per_ms);
     }
 }
@@ -42,20 +42,22 @@ const PosixSocketFacade = struct{
         };
     }
 
-    fn bind(self: PosixSocketFacade, ipv6: [16]u8, port: u16) !void {
-
+    fn bind(self: PosixSocketFacade, ipv6: u128, port: u16) !void {
         const socket_in6_addr = std.posix.sockaddr.in6{
             .family = std.posix.AF.INET6,
             .port = std.mem.nativeToBig(u16, port),
             .flowinfo = 0,
-            .addr = ipv6,
+            .addr = ipv6_natural_2_ipv6_posix(ipv6),
             .scope_id = 0
         };
-        const socket_oblique_addr_cp: *const std.os.linux.sockaddr = @ptrCast(&socket_in6_addr);
+
+        // posix sockets do some pointer shenanigans to allow different address fromats
+        // see https://stackoverflow.com/questions/18609397/whats-the-difference-between-sockaddr-sockaddr-in-and-sockaddr-in6
+        const socket_oblique_addr_cp: *const std.posix.sockaddr = @ptrCast(&socket_in6_addr);
 
         _ = try std.posix.bind(
-            self.socket_fd, 
-            socket_oblique_addr_cp,                         
+            self.socket_fd,
+            socket_oblique_addr_cp,
             socket_addr_len
         );
     }
@@ -63,9 +65,11 @@ const PosixSocketFacade = struct{
     fn receive(self: PosixSocketFacade, buf: []u8) !std.posix.sockaddr.in6 {
         // todo: it should be possible to initialize sender_addr with 0
         var sender_in6_addr: std.posix.sockaddr.in6 = undefined;
-        var sender_addr_size: std.posix.socklen_t = @sizeOf(std.posix.sockaddr.in6);
+        // see the comment in bind() for the oblique pointer
         const sender_oblique_addr_p: *std.posix.sockaddr = @ptrCast(&sender_in6_addr);
-        const sender_addr_len = try std.posix.recvfrom(
+        // the "returned" address size is ignored; ipv6 is assumed
+        var sender_addr_size: std.posix.socklen_t = @sizeOf(std.posix.sockaddr.in6);
+        const message_len = try std.posix.recvfrom(
             self.socket_fd,
             buf,
             flags,
@@ -73,13 +77,15 @@ const PosixSocketFacade = struct{
             &sender_addr_size
         );
 
-        // returned sender address length is ignored for now; valid ipv6 address length assumed
-        _ = sender_addr_len;
+        // returned message length is ignored for now
+        // _ = sender_addr_len;
+        std.debug.print("{any} ", .{message_len});
 
         return sender_in6_addr;
     }
 
     fn sendTo(self: PosixSocketFacade, buf: [len]u8, dest_addr: std.posix.sockaddr.in6) !void {
+        // see the comment in bind() for the oblique pointer
         const dest_oblique_addr_p: *const std.posix.sockaddr = @ptrCast(&dest_addr);
         _ = try std.posix.sendto(
             self.socket_fd,
@@ -90,10 +96,9 @@ const PosixSocketFacade = struct{
         );
     }
 
+    // the by std.posix required [16]u8 ipv6 contradicts the convention
+    // of writing ipv6 addresses as 8 hex quartets; u128 provides a better interface
     fn ipv6_natural_2_ipv6_posix (ipv6: u128) [16]u8 {
-
-        // the by std.posix required [16]u8 ipv6 contradicts the by convention
-        // of writing ipv6 addresses as 8 hex quartets
         var address_bits = ipv6;
         var ipv6_posix = [_]u8{0} ** 16;
         const offset = ipv6_posix.len - 1;
