@@ -122,17 +122,20 @@ fn print_addr(addr_val: [16]u8) void {
 }
 
 test "ipv6_natural_2_ipv6_posix" {
-    const result = PosixSocketFacade.ipv6_natural_2_ipv6_posix(0x1234_5678_9abc_def0_1234_5678_9abc_def0);
-    const expected = [16]u8{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0 };
+    const ipv6 = 0x1234_5678_9abc_def0_1234_5678_9abc_def0;
+    const result = PosixSocketFacade.ipv6_natural_2_ipv6_posix(ipv6);
+    const expected = [8]u8{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0} ** 2;
     for (result, expected) |res, exp| {
         try std.testing.expect( res == exp);
     }
-    const result0 = PosixSocketFacade.ipv6_natural_2_ipv6_posix(0x0000_0000_0000_0000_0000_0000_0000_0000);
+    const ipv6_0 = 0x0000_0000_0000_0000_0000_0000_0000_0000;
+    const result0 = PosixSocketFacade.ipv6_natural_2_ipv6_posix(ipv6_0);
     const expected0 = [_]u8{0} ** 16;
     for (result0, expected0) |res, exp| {
         try std.testing.expect( res == exp);
     }
-    const result1 = PosixSocketFacade.ipv6_natural_2_ipv6_posix(0x0000_0000_0000_0000_0000_0000_0000_0001);
+    const ipv6_1 = 0x0000_0000_0000_0000_0000_0000_0000_0001;
+    const result1 = PosixSocketFacade.ipv6_natural_2_ipv6_posix(ipv6_1);
     const expected1 = [_]u8{0} ** 15 ++ [_]u8{1};
     for (result1, expected1) |res, exp| {
         try std.testing.expect( res == exp);
