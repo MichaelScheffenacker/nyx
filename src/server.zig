@@ -1,4 +1,4 @@
-// server
+// nyx server
 const std = @import("std");
 const PosixSocketFacade = @import("posixsocketfacade.zig").PosixSocketFacade;
 
