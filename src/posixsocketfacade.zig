@@ -23,16 +23,10 @@ pub const PosixSocketFacade = struct{
     }
 
     pub fn bind(self: PosixSocketFacade, ipv6: u128, port: u16) !void {
-        const socket_in6_addr = std.posix.sockaddr.in6{
-            .family = std.posix.AF.INET6,
-            .port = std.mem.nativeToBig(u16, port),
-            .flowinfo = 0,
-            .addr = ipv6_natural_2_ipv6_posix(ipv6),
-            .scope_id = 0
-        };
+        const socket_in6_addr = ipv6_addr_2_posix_addr(ipv6, port);
 
         // posix sockets do some pointer shenanigans to allow different address fromats
-        // see https://stackoverflow.com/questions/18609397/whats-the-difference-between-sockaddr-sockaddr-in-and-sockaddr-in6
+        // see https://stackoverflow.com/questions/18609397
         const socket_oblique_addr_cp: *const std.posix.sockaddr = @ptrCast(&socket_in6_addr);
 
         _ = try std.posix.bind(
