@@ -82,9 +82,20 @@ pub const PosixSocketFacade = struct{
         );
     }
 
+    pub fn ipv6_addr_2_posix_addr(ipv6: u128, port: u16) std.posix.sockaddr.in6 {
+        const socket_in6_addr = std.posix.sockaddr.in6{
+            .family = std.posix.AF.INET6,
+            .port = std.mem.nativeToBig(u16, port),
+            .flowinfo = 0,
+            .addr = ipv6_natural_2_ipv6_posix(ipv6),
+            .scope_id = 0
+        };
+        return socket_in6_addr;
+    }
+
     // the by std.posix required [16]u8 ipv6 contradicts the convention
     // of writing ipv6 addresses as 8 hex quartets; u128 provides a better interface
-    fn ipv6_natural_2_ipv6_posix (ipv6: u128) [16]u8 {
+    fn ipv6_natural_2_ipv6_posix(ipv6: u128) [16]u8 {
         var address_bits = ipv6;
         var ipv6_posix = [1]u8{0} ** 16;
         const offset = ipv6_posix.len - 1;

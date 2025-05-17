@@ -2,9 +2,8 @@
 const std = @import("std");
 const PosixSocketFacade = @import("posixsocketfacade.zig").PosixSocketFacade;
 
-const len: usize = 400;
-
 pub fn main() !void {
+    const len: usize = 400;
     var buf = [_]u8{0} ** len;
     
     const client_ipv6_addr = 0x0000_0000_0000_0000_0000_0000_0000_0000;
