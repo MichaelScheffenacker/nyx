@@ -7,7 +7,8 @@ pub fn main() !void {
     var buf = [_]u8{0} ** len;
     
     const client_ipv6_addr = 0x0000_0000_0000_0000_0000_0000_0000_0000;
-    const listen_socket = try PosixSocketFacade.init();
+    const listen_socket = try PosixSocketFacade.create();
+    defer listen_socket.close();
     try listen_socket.bind(client_ipv6_addr, 5001);
 
     while (true) {

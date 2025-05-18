@@ -8,8 +8,8 @@ pub fn main() !void {
     var buf = buf_buf[0..];
 
     const server_ipv6_addr = 0x0000_0000_0000_0000_0000_0000_0000_0001;
-    const socket = try Socket.init();
-    buf[1] += 1;
+    const socket = try Socket.create();
+    defer socket.close();
     
     const request = "asdf";
     if (request.len <= len) {

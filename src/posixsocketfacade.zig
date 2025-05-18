@@ -10,7 +10,7 @@ pub const PosixSocketFacade = struct{
 
     socket_fd: std.posix.socket_t,
 
-    pub fn init() !PosixSocketFacade {
+    pub fn create() !PosixSocketFacade {
 
         // create IPv6 UDP posix socket
         const ipv6_family = std.posix.AF.INET6;
@@ -20,6 +20,10 @@ pub const PosixSocketFacade = struct{
         return PosixSocketFacade{
             .socket_fd = socket_fd,
         };
+    }
+
+    pub fn close(self: PosixSocketFacade) void {
+        std.posix.close(self.socket_fd);
     }
 
     pub fn bind(self: PosixSocketFacade, ipv6: u128, port: u16) !void {
