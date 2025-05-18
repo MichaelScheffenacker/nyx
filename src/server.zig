@@ -3,6 +3,17 @@ const std = @import("std");
 const PosixSocketFacade = @import("posixsocketfacade.zig").PosixSocketFacade;
 
 pub fn main() !void {
+    
+    var file = try std.fs.openFileAbsolute("/home/msc/temporary/nyx/a.txt", .{ .mode = .read_only});
+    defer file.close();
+    var buf_reader = std.io.bufferedReader(file.reader());
+    var in_stream = buf_reader.reader();
+    // var line_buf_buf: [1024]u8 = undefined;
+    // var line_buf = line_buf_buf[0..];
+    // while (try in_stream.readUntilDelimiterOrEof(line_buf, '\n')) |line| {
+    //     _ = line;
+    // }
+
     const len: usize = 400;
     var buf = [_]u8{0} ** len;
     
@@ -16,7 +27,8 @@ pub fn main() !void {
         const client_socket_address = try listen_socket.receiveFrom(buf[0..]);
         std.debug.print("{s} ({any})\n", .{buf, buf.len});
 
-        for (5..8) |i| buf[i] = '0';
+        _ = try in_stream.readAll(buf[0..]);
+        // for (5..8) |i| buf[i] = '0';
         try listen_socket.sendTo(buf[0..], client_socket_address);
 
         //todo: remove sleep when everything is stable
