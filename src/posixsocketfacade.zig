@@ -57,8 +57,8 @@ pub const PosixSocketFacade = struct{
         );
 
         // returned message length is ignored for now
-        // _ = sender_addr_len;
-        std.debug.print("{any} ", .{message_len});
+         _ = message_len;
+        //std.debug.print("{any} ", .{message_len});
 
         if (sender_addr_size != @sizeOf(std.posix.sockaddr.in6)) {
             return error.UnsupportedAddressFamily;

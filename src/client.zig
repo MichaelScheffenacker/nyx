@@ -11,7 +11,7 @@ pub fn main() !void {
     const socket = try Socket.create();
     defer socket.close();
     
-    const request = "asdf";
+    const request = "/af.txt";
     if (request.len <= len) {
         for (request, 0..) |char, i| {
             buf[i] = char;
