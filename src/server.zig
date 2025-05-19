@@ -26,18 +26,22 @@ const Ressource = struct {
 
     // makeshift hash function
     pub fn hash(id: []const u8) !u64 {
-    if (id.len > max_id_len) {
-        return error.StringTooLong;
+        if (id.len > max_id_len) {
+            return error.StringTooLong;
+        }
+        const primes = [max_id_len]u16{2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97, 101, 103, 107, 109, 113, 127, 131, 137, 139, 149, 151, 157, 163, 167, 173, 179, 181, 191, 193, 197, 199, 211, 223, 227, 229, 233, 239, 241, 251, 257, 263, 269, 271, 277, 281, 283, 293, 307, 311};
+        var sum: u64 = 0;
+        for (id, 0..) |char, i| {
+            // summing prime products is not even injective (2+3=5)
+            sum += primes[i] * char;
+        }
+        return sum;
     }
-    const primes = [max_id_len]u16{2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97, 101, 103, 107, 109, 113, 127, 131, 137, 139, 149, 151, 157, 163, 167, 173, 179, 181, 191, 193, 197, 199, 211, 223, 227, 229, 233, 239, 241, 251, 257, 263, 269, 271, 277, 281, 283, 293, 307, 311};
-    var sum: u64 = 0;
-    for (id, 0..) |char, i| {
-        // summing prime products is not even injective (2+3=5)
-        sum += primes[i] * char;
-    }
-    return sum;
-}
 };
+
+fn getWithFallback(map: std.StringHashMap([]const u8), id: []const u8) []const u8 {
+    return map.get(id) orelse map.get("/404") orelse "<err: missing /404>";
+}
 
 pub fn main() !void {
 
@@ -46,6 +50,20 @@ pub fn main() !void {
         try Ressource.init("/home/msc/temporary/nyx/a.txt", "/a.txt"),
         try Ressource.init("/home/msc/temporary/nyx/b.txt", "/b.txt"),
     };
+
+    // hash map
+    var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+    var map = std.StringHashMap([]const u8).init(allocator);
+    defer map.deinit();
+    for (rsrcs, 0..) |rsrc, i| {
+        // todo: whytf does the next line work with rsrcs[i] but not with rsrc ???
+        try map.put(rsrc.id, rsrcs[i].content_buf[0..]);
+        // std.debug.print("{s}: {s}", .{rsrc.id, rsrc.content_buf[0..]});
+    }
+    // std.debug.print("{s}\n", .{ getWithFallback(map,"/a.txt") });
+
 
     const len: usize = 400;
     var buf = [_]u8{0} ** len;
@@ -66,11 +84,7 @@ pub fn main() !void {
         }
         const id: []const u8 = buf[0..request_len];
         std.debug.print("{s} ({any}/{any})\n", .{id, request_len, len});
-        const content = switch (try Ressource.hash(id)) {
-            else => rsrcs[0].content_buf,
-            try Ressource.hash("/a.txt") => rsrcs[1].content_buf,
-            try Ressource.hash("/b.txt") => rsrcs[2].content_buf,
-        };
+        const content = getWithFallback(map, id);
         for (content, 0..) |char, i| {
             if (i >= buf.len) { break; }
             buf[i] = char;
