@@ -11,7 +11,10 @@ pub fn main() !void {
     const socket = try Socket.create();
     defer socket.close();
     
-    const request = "/af.txt";
+    var args_iter = std.process.args();
+    _ = args_iter.next();
+    const request = if (args_iter.next()) |res| res else "<empty>";
+
     if (request.len <= len) {
         for (request, 0..) |char, i| {
             buf[i] = char;
