@@ -2,42 +2,7 @@
 const std = @import("std");
 const PosixSocketFacade = @import("posixsocketfacade.zig").PosixSocketFacade;
 
-const Ressource = struct {
-    const max_path_len = 128;
-    const max_id_len = 64;
-    const max_content_len = 65536;
-    path: []const u8,
-    id: []const u8,
-    content_buf: [max_content_len]u8,
-    fn init(path: []const u8, id: []const u8) !Ressource {
-        var content_buf = [1]u8{0} ** max_content_len;
-        const flags = .{ .mode = .read_only};
-        var file = try std.fs.openFileAbsolute(path, flags);
-        defer file.close();
-        var buf_reader = std.io.bufferedReader(file.reader());
-        var in_stream = buf_reader.reader();
-        _ = try in_stream.readAll(content_buf[0..]);
-        return Ressource{
-            .path = path,
-            .id = id,
-            .content_buf = content_buf,
-        };
-    }
-
-    // makeshift hash function
-    pub fn hash(id: []const u8) !u64 {
-        if (id.len > max_id_len) {
-            return error.StringTooLong;
-        }
-        const primes = [max_id_len]u16{2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97, 101, 103, 107, 109, 113, 127, 131, 137, 139, 149, 151, 157, 163, 167, 173, 179, 181, 191, 193, 197, 199, 211, 223, 227, 229, 233, 239, 241, 251, 257, 263, 269, 271, 277, 281, 283, 293, 307, 311};
-        var sum: u64 = 0;
-        for (id, 0..) |char, i| {
-            // summing prime products is not even injective (2+3=5)
-            sum += primes[i] * char;
-        }
-        return sum;
-    }
-};
+const max_content_len = 65536;
 
 fn getWithFallback(map: std.StringHashMap([]const u8), id: []const u8) []const u8 {
     return map.get(id) orelse map.get("/404") orelse "<err: missing /404>";
@@ -45,24 +10,36 @@ fn getWithFallback(map: std.StringHashMap([]const u8), id: []const u8) []const u
 
 pub fn main() !void {
 
-    const rsrcs = [_]Ressource{
-        try Ressource.init("/home/msc/temporary/nyx/404", "/404"),
-        try Ressource.init("/home/msc/temporary/nyx/a.txt", "/a.txt"),
-        try Ressource.init("/home/msc/temporary/nyx/b.txt", "/b.txt"),
-    };
-
-    // hash map
     var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
+
+    const base_path = "/home/msc/temporary/nyx";
+    var dir = try std.fs.openDirAbsolute(base_path, .{ .iterate=true});
+
     var map = std.StringHashMap([]const u8).init(allocator);
     defer map.deinit();
-    for (rsrcs, 0..) |rsrc, i| {
-        // todo: whytf does the next line work with rsrcs[i] but not with rsrc ???
-        try map.put(rsrc.id, rsrcs[i].content_buf[0..]);
-        // std.debug.print("{s}: {s}", .{rsrc.id, rsrc.content_buf[0..]});
+
+    var dir_iterator = dir.iterate();
+    while (try dir_iterator.next()) |file| {
+        if (file.kind != std.fs.File.Kind.file) {
+            continue;
+        }
+
+        const id = try std.mem.concat(allocator, u8, &.{"/", file.name});
+        const path = try std.mem.concat(allocator, u8, &.{base_path, id});
+        const flags = .{ .mode = .read_only};
+        var file_descriptor = try std.fs.openFileAbsolute(path, flags);
+        defer file_descriptor.close();
+        const content = try file_descriptor.readToEndAlloc(allocator, max_content_len);
+
+        try map.put(id, content[0..]);
     }
-    // std.debug.print("{s}\n", .{ getWithFallback(map,"/a.txt") });
+
+    var  map_iterator = map.iterator();
+    while (map_iterator.next()) |entry| {
+        std.debug.print("{s}: {s}", .{entry.key_ptr.*, entry.value_ptr.*});
+    }
 
 
     const len: usize = 400;

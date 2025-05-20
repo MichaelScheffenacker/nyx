@@ -25,5 +25,5 @@ pub fn main() !void {
     try socket.sendTo(buf, server_posix_addr);
     _ = try socket.receiveFrom(buf);
 
-    std.debug.print("{s}\n", .{buf});
+    std.debug.print("{s}", .{buf});
 }
