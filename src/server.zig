@@ -12,34 +12,12 @@ pub fn main() !void {
 
     var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
     defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+    const alloc = gpa.allocator();
 
     const server_dir_path = "/home/msc/temporary/nyx";
-    const dir_flags = .{ .iterate=true };
-    var server_dir = try std.fs.openDirAbsolute(server_dir_path, dir_flags);
-
-    var page_map = std.StringHashMap([]const u8).init(allocator);
+    var page_map = std.StringHashMap([]const u8).init(alloc);
     defer page_map.deinit();
-
-    var server_dir_iterator = server_dir.iterate();
-    while (try server_dir_iterator.next()) |file| {
-        if (file.kind != std.fs.File.Kind.file) {
-            continue;
-        }
-
-        const id_strings = &.{"/", file.name};
-        const page_id = try std.mem.concat(allocator, u8, id_strings);
-
-        const path_strings = &.{server_dir_path, "/", file.name};
-        const path = try std.mem.concat(allocator, u8, path_strings);
-
-        const page_flags = .{ .mode = .read_only };
-        var page_fd = try std.fs.openFileAbsolute(path, page_flags);
-        defer page_fd.close();
-        
-        const content = try page_fd.readToEndAlloc(allocator, max_content_len);
-        try page_map.put(page_id, content[0..]);
-    }
+    try loadPages(server_dir_path, &page_map, alloc);
 
     var  page_iterator = page_map.iterator();
     while (page_iterator.next()) |page| {
@@ -78,7 +56,36 @@ pub fn main() !void {
     }
 }
 
-fn print_addr(addr_val: [16]u8) void {
+fn loadPages(
+        server_dir_path: []const u8, 
+        page_map: *std.StringHashMap([]const u8), 
+        alloc: std.mem.Allocator
+    ) !void {
+    const dir_flags = .{ .iterate=true };
+    var server_dir = try std.fs.openDirAbsolute(server_dir_path, dir_flags);
+
+    var server_dir_iterator = server_dir.iterate();
+    while (try server_dir_iterator.next()) |file| {
+        if (file.kind != std.fs.File.Kind.file) {
+            continue;
+        }
+
+        const id_strings = &.{"/", file.name};
+        const page_id = try std.mem.concat(alloc, u8, id_strings);
+
+        const path_strings = &.{server_dir_path, "/", file.name};
+        const path = try std.mem.concat(alloc, u8, path_strings);
+
+        const page_flags = .{ .mode = .read_only };
+        var page_fd = try std.fs.openFileAbsolute(path, page_flags);
+        defer page_fd.close();
+        
+        const content = try page_fd.readToEndAlloc(alloc, max_content_len);
+        try page_map.put(page_id, content[0..]);
+    }
+}
+
+fn printAddr(addr_val: [16]u8) void {
     for (addr_val, 0..) |val, i| {
         std.debug.print("{x:0>2}", .{val});
         if (i % 2 == 1 and i < 14) {
