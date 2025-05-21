@@ -14,31 +14,36 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    const base_path = "/home/msc/temporary/nyx";
-    var dir = try std.fs.openDirAbsolute(base_path, .{ .iterate=true});
+    const server_dir_path = "/home/msc/temporary/nyx";
+    const dir_flags = .{ .iterate=true };
+    var server_dir = try std.fs.openDirAbsolute(server_dir_path, dir_flags);
 
-    var map = std.StringHashMap([]const u8).init(allocator);
-    defer map.deinit();
+    var page_map = std.StringHashMap([]const u8).init(allocator);
+    defer page_map.deinit();
 
-    var dir_iterator = dir.iterate();
-    while (try dir_iterator.next()) |file| {
+    var server_dir_iterator = server_dir.iterate();
+    while (try server_dir_iterator.next()) |file| {
         if (file.kind != std.fs.File.Kind.file) {
             continue;
         }
 
-        const id = try std.mem.concat(allocator, u8, &.{"/", file.name});
-        const path = try std.mem.concat(allocator, u8, &.{base_path, id});
-        const flags = .{ .mode = .read_only};
-        var file_descriptor = try std.fs.openFileAbsolute(path, flags);
-        defer file_descriptor.close();
-        const content = try file_descriptor.readToEndAlloc(allocator, max_content_len);
+        const id_strings = &.{"/", file.name};
+        const page_id = try std.mem.concat(allocator, u8, id_strings);
 
-        try map.put(id, content[0..]);
+        const path_strings = &.{server_dir_path, "/", file.name};
+        const path = try std.mem.concat(allocator, u8, path_strings);
+
+        const page_flags = .{ .mode = .read_only };
+        var page_fd = try std.fs.openFileAbsolute(path, page_flags);
+        defer page_fd.close();
+        
+        const content = try page_fd.readToEndAlloc(allocator, max_content_len);
+        try page_map.put(page_id, content[0..]);
     }
 
-    var  map_iterator = map.iterator();
-    while (map_iterator.next()) |entry| {
-        std.debug.print("{s}: {s}", .{entry.key_ptr.*, entry.value_ptr.*});
+    var  page_iterator = page_map.iterator();
+    while (page_iterator.next()) |page| {
+        std.debug.print("{s}: {s}", .{page.key_ptr.*, page.value_ptr.*});
     }
 
 
@@ -61,7 +66,7 @@ pub fn main() !void {
         }
         const id: []const u8 = buf[0..request_len];
         std.debug.print("{s} ({any}/{any})\n", .{id, request_len, len});
-        const content = getWithFallback(map, id);
+        const content = getWithFallback(page_map, id);
         for (content, 0..) |char, i| {
             if (i >= buf.len) { break; }
             buf[i] = char;
