@@ -8,6 +8,15 @@ fn getWithFallback(map: std.StringHashMap([]const u8), id: []const u8) []const u
     return map.get(id) orelse map.get("/404") orelse "<err: missing /404>";
 }
 
+fn truncate(alloc: std.mem.Allocator, str: []const u8, len: u64) ![]const u8 {
+    if (str.len > len) {
+        const truncated = str[0..len];
+        return try std.mem.concat(alloc, u8, &.{truncated, "…\n"});
+    } else {
+        return str;
+    }
+}
+
 pub fn main() !void {
 
     var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
@@ -21,8 +30,55 @@ pub fn main() !void {
 
     var  page_iterator = page_map.iterator();
     while (page_iterator.next()) |page| {
-        std.debug.print("{s}: {s}", .{page.key_ptr.*, page.value_ptr.*});
+        std.debug.print("{s}: {s}", .{page.key_ptr.*, try truncate(alloc, page.value_ptr.*, 50 )});
     }
+
+    const col_width = 50;
+    var content: []const u8 = page_map.get("/a.txt") orelse "<no entry>";
+    const selis_break: u64 = 800;
+    const selis = content[0..selis_break];
+    var col_break: u64 = 400;
+    while (selis[col_break] != ' ') {
+        col_break -= 1;
+    }
+    const col1 = selis[0..col_break];
+    const col2 = selis[col_break + 1..selis_break];
+    var line_break_1: u64 = 0;
+    var line_break_2: u64 = 0;
+    for (0..8f) |_| {
+        const offset: u64 = if (line_break_1 == 0) 0 else 1;
+        const prev_line_break_1: u64 = line_break_1 + offset;
+        line_break_1 += col_width;
+        while (col1[line_break_1] != ' ') {
+            line_break_1 -= 1;
+        }
+        const offset2: u64 = if (line_break_2 == 0) 0 else 1;
+        const prev_line_break_2: u64 = line_break_2 + offset2;
+        line_break_2 += col_width;
+        while (col2[line_break_2] != ' ') {
+            line_break_2 -= 1;
+        }
+
+        const line1 = col1[prev_line_break_1..line_break_1];
+        const line2 = col2[prev_line_break_2..line_break_2];
+        const padding_buf = " " ** col_width;
+        const padding =  padding_buf[0..50 - (line_break_1 - prev_line_break_1) + 5];
+        const window_row_strings = &.{line1, padding, line2};
+        const window_row = try std.mem.concat(alloc, u8, window_row_strings);
+        std.debug.print("{s}\n", .{window_row});
+    }
+
+
+    const stdout = std.io.getStdOut();
+
+    var winsize: std.posix.winsize = undefined;
+    const result = std.posix.system.ioctl(stdout.handle, std.posix.T.IOCGWINSZ, @intFromPtr(&winsize));
+    switch (std.posix.errno(result)) {
+        .SUCCESS => {},
+        else => return error.IoctlError,
+    }
+
+    std.debug.print("{any} {any}", .{winsize.col, winsize.row});
 
 
     const len: usize = 400;
@@ -44,7 +100,7 @@ pub fn main() !void {
         }
         const id: []const u8 = buf[0..request_len];
         std.debug.print("{s} ({any}/{any})\n", .{id, request_len, len});
-        const content = getWithFallback(page_map, id);
+        content = getWithFallback(page_map, id);
         for (content, 0..) |char, i| {
             if (i >= buf.len) { break; }
             buf[i] = char;
