@@ -45,9 +45,9 @@ pub fn main() !void {
     const col2 = selis[col_break + 1..selis_break];
     var line_break_1: u64 = 0;
     var line_break_2: u64 = 0;
-    for (0..8f) |_| {
-        const offset: u64 = if (line_break_1 == 0) 0 else 1;
-        const prev_line_break_1: u64 = line_break_1 + offset;
+    for (0..8) |_| {
+        const offset1: u64 = if (line_break_1 == 0) 0 else 1;
+        const prev_line_break_1: u64 = line_break_1 + offset1;
         line_break_1 += col_width;
         while (col1[line_break_1] != ' ') {
             line_break_1 -= 1;
@@ -122,7 +122,10 @@ fn loadPages(
 
     var server_dir_iterator = server_dir.iterate();
     while (try server_dir_iterator.next()) |file| {
-        if (file.kind != std.fs.File.Kind.file) {
+        if (
+            file.kind != std.fs.File.Kind.file
+            or file.name[0] == '.'
+        ) {
             continue;
         }
 
