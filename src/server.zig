@@ -42,36 +42,51 @@ pub fn main() !void {
     var char_index: u64 = 0;
     var is_newline = false;
 
-    for (content) |char| {
+    for (content) |char_para| {
+        var char = char_para;
         if (line_index >= lines_buf.len - 1) {
             return error.LinesBufferFull;
         }
         
         if (char == '\n') {
-            lines[line_index][char_index] = ' ';
+            char = ' ';
             is_newline = true;
-        } else {
-            lines[line_index][char_index] = char;
         }
+        lines[line_index][char_index] = char;
         char_index += 1;
 
 
         if (char_index == col_width or is_newline) {
             is_newline = false;
             
-            const padding_buf = " " ** 100; // todo: maybe too short
-            const padding =  padding_buf[0..5];
-            const window_row_strings = &.{&lines[line_index], padding};
-            const window_row = try std.mem.concat(alloc, u8, window_row_strings);
-            std.debug.print("{s}\n", .{window_row});
-            
             line_index += 1;
             lines = lines_buf[0..line_index + 1];
-            char_index = 0;
+
+            if (char != ' ') {
+                const end_index = char_index;
+                while(char != ' ') {
+                    char_index -= 1;
+                    char = lines[line_index - 1][char_index];
+                }
+                const next_start_index = end_index - char_index - 1;
+                for (char_index + 1..end_index, 0..next_start_index) |i, j| {
+                    lines[line_index][j] = lines[line_index - 1][i];
+                    lines[line_index - 1][i] = ' ';
+                }
+                char_index = next_start_index;
+            } else {
+                char_index = 0;
+            }
         }
     }
     
-
+    for (lines) |line| {
+        const padding_buf = " " ** 100; // todo: maybe too short
+        const padding =  padding_buf[0..5];
+        const window_row_strings = &.{&line, padding};
+        const window_row = try std.mem.concat(alloc, u8, window_row_strings);
+        std.debug.print("{s}\n", .{window_row});
+    }
 
     const stdout = std.io.getStdOut();
 
