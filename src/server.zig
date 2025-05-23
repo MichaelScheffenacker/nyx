@@ -35,67 +35,40 @@ pub fn main() !void {
 
     const col_width = 50;
     var content: []const u8 = page_map.get("/a.txt") orelse "<no entry>";
-    const selis_break: u64 = 1000;
-    const selis = content[0..selis_break];
-    var col_break: u64 = 500;
-    while (selis[col_break] != ' ') {
-        col_break -= 1;
-    }
-    const cols = [_][]const u8{
-        selis[0..col_break],
-        selis[col_break..selis_break],
-    };
 
-    var line = [1][col_width]u8{[_]u8{' '} ** col_width} ** 2;
+    var lines_buf = [1][col_width]u8{[_]u8{' '} ** col_width} ** 1024;
+    var lines: [][col_width]u8 = lines_buf[0..1];
+    var line_index: u64 = 0;
+    var char_index: u64 = 0;
+    var is_newline = false;
 
-    var line_break = [1]u64{0} ** 2;
-    for (0..12) |_| {
-        line = [1][col_width]u8{[_]u8{' '} ** col_width} ** 2;
-        for (cols, 0..) |col, i| {
-            //const offset: u64 = if (line_break == 0) 0 else 1;
-            //const prev_line_break: u64 = line_break + offset;
-            var char_pos: u64 = 0;
-            while (
-                col[line_break[i]] != '\n'
-                and char_pos < col_width
-                and line_break[i] < cols[i].len - 1
-            ) {
-                line[i][char_pos] = col[line_break[i]];
-                line_break[i] += 1;
-                char_pos += 1;
-            }
-            if (col[line_break[i]] == '\n') {
-                line[i][char_pos] = ' ';
-                line_break[i] += 1;
-                char_pos += 1;
-            } else {
-                line_break[i] -= 1;
-                char_pos -= 1;
-                while (col[line_break[i]] != ' ') {
-                    line[i][char_pos] = ' ';
-                    line_break[i] -= 1;
-                    char_pos -= 1;
-                }
-            }
-            // line_break[0] += 1;
-            // line_break[1] += 1;
-        
-        // const offset2: u64 = if (line_break_2 == 0) 0 else 1;
-        // const prev_line_break_2: u64 = line_break_2 + offset2;
-        // line_break_2 += col_width;
-        // while (col2[line_break_2] != ' ') {
-        //     line_break_2 -= 1;
-        // }
-        //line[i] = col[prev_line_break..line_break];
-        //const line2 = col2[prev_line_break_2..line_break_2];
+    for (content) |char| {
+        if (line_index >= lines_buf.len - 1) {
+            return error.LinesBufferFull;
         }
         
+        if (char == '\n') {
+            lines[line_index][char_index] = ' ';
+            is_newline = true;
+        } else {
+            lines[line_index][char_index] = char;
+        }
+        char_index += 1;
 
-        const padding_buf = " " ** col_width;
-        const padding =  padding_buf[0..50 - line[0].len + 5];
-        const window_row_strings = &.{&line[0], padding, &line[1]};
-        const window_row = try std.mem.concat(alloc, u8, window_row_strings);
-        std.debug.print("{s}\n", .{window_row});
+
+        if (char_index == col_width or is_newline) {
+            is_newline = false;
+            
+            const padding_buf = " " ** 100; // todo: maybe too short
+            const padding =  padding_buf[0..5];
+            const window_row_strings = &.{&lines[line_index], padding};
+            const window_row = try std.mem.concat(alloc, u8, window_row_strings);
+            std.debug.print("{s}\n", .{window_row});
+            
+            line_index += 1;
+            lines = lines_buf[0..line_index + 1];
+            char_index = 0;
+        }
     }
     
 
