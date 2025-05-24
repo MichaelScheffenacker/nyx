@@ -80,12 +80,30 @@ pub fn main() !void {
         }
     }
     
-    for (lines) |line| {
-        const padding_buf = " " ** 100; // todo: maybe too short
-        const padding =  padding_buf[0..5];
-        const window_row_strings = &.{&line, padding};
-        const window_row = try std.mem.concat(alloc, u8, window_row_strings);
-        std.debug.print("{s}\n", .{window_row});
+    const col_count = 2;
+    const col_gap = 5;
+    // const window_row_buf_len = (col_width + col_gap) * col_count;
+    var window_rows_buf: [1024][]u8 = undefined;
+    var window_rows: [][]u8 = window_rows_buf[0..0];
+    const padding_buf = " " ** 100; // todo: maybe too short
+    const lines_per_col = 22;
+    for (lines, 0..) |line, line_count| {
+        const padding = padding_buf[0..col_gap];
+        const window_row_index = (line_count / (lines_per_col*col_count)) + line_count % lines_per_col;
+        const col_of_line = (line_count/lines_per_col) % col_count;
+        if (window_row_index + 1 > window_rows.len) {
+            window_rows = window_rows_buf[0..window_row_index+1];
+        }
+        if (col_of_line == 0) {
+            const window_row_strings = &.{&line};
+            window_rows[window_row_index] = try std.mem.concat(alloc, u8, window_row_strings);
+        } else {
+            const window_row_strings = &.{"asdf", padding, &line};
+            window_rows[window_row_index] = try std.mem.concat(alloc, u8, window_row_strings);
+        }
+    }
+    for (window_rows) |row| {
+        std.debug.print("{s}\n", .{row});
     }
 
     const stdout = std.io.getStdOut();
