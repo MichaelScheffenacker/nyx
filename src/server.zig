@@ -30,7 +30,9 @@ pub fn main() !void {
 
     var  page_iterator = page_map.iterator();
     while (page_iterator.next()) |page| {
-        std.debug.print("{s}: {s}", .{page.key_ptr.*, try truncate(alloc, page.value_ptr.*, 50 )});
+        const truncated_page_content = try truncate(alloc, page.value_ptr.*, 50 );
+        defer alloc.free(truncated_page_content);
+        std.debug.print("{s}: {s}", .{page.key_ptr.*, truncated_page_content});
     }
 
     const col_width = 50;
@@ -82,7 +84,6 @@ pub fn main() !void {
     
     const col_count = 2;
     const col_gap = 5;
-    // const window_row_buf_len = (col_width + col_gap) * col_count;
     var window_rows_buf: [1024][]u8 = undefined;
     var window_rows: [][]u8 = window_rows_buf[0..0];
     const padding_buf = " " ** 100; // todo: maybe too short
@@ -98,8 +99,13 @@ pub fn main() !void {
             const window_row_strings = &.{&line};
             window_rows[window_row_index] = try std.mem.concat(alloc, u8, window_row_strings);
         } else {
-            const window_row_strings = &.{"asdf", padding, &line};
+            const window_row_strings = &.{window_rows[window_row_index], padding, &line};
             window_rows[window_row_index] = try std.mem.concat(alloc, u8, window_row_strings);
+        }
+    }
+    defer {
+        for (window_rows) |row| {
+            alloc.free(row);
         }
     }
     for (window_rows) |row| {
@@ -124,7 +130,7 @@ pub fn main() !void {
     const client_ipv6_addr = 0x0000_0000_0000_0000_0000_0000_0000_0000;
     const listen_socket = try PosixSocketFacade.create();
     defer listen_socket.close();
-    try listen_socket.bind(client_ipv6_addr, 5001);
+    try listen_socket.bind(client_ipv6_addr, 5002);
 
     while (true) {
         buf = [_]u8{0} ** len;
