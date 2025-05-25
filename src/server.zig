@@ -87,11 +87,23 @@ pub fn main() !void {
     var window_rows_buf: [1024][]u8 = undefined;
     var window_rows: [][]u8 = window_rows_buf[0..0];
     const padding_buf = " " ** 100; // todo: maybe too short
-    const lines_per_col = 22;
-    for (lines, 0..) |line, line_count| {
+    const lines_per_col = 12;
+    var row_offset: u64 = 0;
+    for (lines, 0..) |line, line_indx| {
         const padding = padding_buf[0..col_gap];
-        const window_row_index = (line_count / (lines_per_col*col_count)) + line_count % lines_per_col;
-        const col_of_line = (line_count/lines_per_col) % col_count;
+        var window_row_index = row_offset + (line_indx / (lines_per_col*col_count)) * lines_per_col + line_indx % lines_per_col;
+        const col_of_line = (line_indx/lines_per_col) % col_count;
+        const lines_per_selis = lines_per_col * col_count;
+        const line_of_selis = line_indx % lines_per_selis;
+        if (line_of_selis == 0) {
+            if (window_row_index + 1 > window_rows.len) {
+                window_rows = window_rows_buf[0..window_row_index+1];
+            }
+            window_rows[window_row_index] = try std.mem.concat(alloc, u8, &.{""});
+            row_offset += 1;
+            window_row_index += 1;
+        }
+        // std.debug.print("{any} " ** 3 ++ "\n", .{line_indx, window_row_index, col_of_line});
         if (window_row_index + 1 > window_rows.len) {
             window_rows = window_rows_buf[0..window_row_index+1];
         }
@@ -111,6 +123,7 @@ pub fn main() !void {
     for (window_rows) |row| {
         std.debug.print("{s}\n", .{row});
     }
+    // std.debug.print("{any}", .{window_rows[1]});
 
     const stdout = std.io.getStdOut();
 
@@ -130,7 +143,7 @@ pub fn main() !void {
     const client_ipv6_addr = 0x0000_0000_0000_0000_0000_0000_0000_0000;
     const listen_socket = try PosixSocketFacade.create();
     defer listen_socket.close();
-    try listen_socket.bind(client_ipv6_addr, 5002);
+    try listen_socket.bind(client_ipv6_addr, 5001);
 
     while (true) {
         buf = [_]u8{0} ** len;
