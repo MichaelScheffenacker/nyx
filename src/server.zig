@@ -4,18 +4,10 @@ const PosixSocketFacade = @import("posixsocketfacade.zig").PosixSocketFacade;
 
 const max_content_len = 65536;
 
-fn getWithFallback(map: std.StringHashMap([]const u8), id: []const u8) []const u8 {
-    return map.get(id) orelse map.get("/404") orelse "<err: missing /404>";
-}
+const col_width = 50;
 
-fn truncate(alloc: std.mem.Allocator, str: []const u8, len: u64) ![]const u8 {
-    if (str.len > len) {
-        const truncated = str[0..len];
-        return try std.mem.concat(alloc, u8, &.{truncated, "…\n"});
-    } else {
-        return str;
-    }
-}
+var lines_buf = [1][col_width]u8{[_]u8{' '} ** col_width} ** 1024;
+var window_rows_buf: [1024][]u8 = undefined;
 
 pub fn main() !void {
 
@@ -35,86 +27,16 @@ pub fn main() !void {
         std.debug.print("{s}: {s}", .{page.key_ptr.*, truncated_page_content});
     }
 
-    const col_width = 50;
     var content: []const u8 = page_map.get("/a.txt") orelse "<no entry>";
+    const lines = try parseLines(content);
 
-    var lines_buf = [1][col_width]u8{[_]u8{' '} ** col_width} ** 1024;
-    var lines: [][col_width]u8 = lines_buf[0..1];
-    var line_index: u64 = 0;
-    var char_index: u64 = 0;
-    var is_newline = false;
-
-    for (content) |char_para| {
-        var char = char_para;
-        if (line_index >= lines_buf.len - 1) {
-            return error.LinesBufferFull;
-        }
-        
-        if (char == '\n') {
-            char = ' ';
-            is_newline = true;
-        }
-        lines[line_index][char_index] = char;
-        char_index += 1;
-
-
-        if (char_index == col_width or is_newline) {
-            is_newline = false;
-            
-            line_index += 1;
-            lines = lines_buf[0..line_index + 1];
-
-            if (char != ' ') {
-                const end_index = char_index;
-                while(char != ' ') {
-                    char_index -= 1;
-                    char = lines[line_index - 1][char_index];
-                }
-                const next_start_index = end_index - char_index - 1;
-                for (char_index + 1..end_index, 0..next_start_index) |i, j| {
-                    lines[line_index][j] = lines[line_index - 1][i];
-                    lines[line_index - 1][i] = ' ';
-                }
-                char_index = next_start_index;
-            } else {
-                char_index = 0;
-            }
-        }
-    }
-    
-    const col_count = 2;
-    const col_gap = 5;
-    var window_rows_buf: [1024][]u8 = undefined;
-    var window_rows: [][]u8 = window_rows_buf[0..0];
-    const padding_buf = " " ** 100; // todo: maybe too short
-    const lines_per_col = 12;
-    var row_offset: u64 = 0;
-    for (lines, 0..) |line, line_indx| {
-        const padding = padding_buf[0..col_gap];
-        var window_row_index = row_offset + (line_indx / (lines_per_col*col_count)) * lines_per_col + line_indx % lines_per_col;
-        const col_of_line = (line_indx/lines_per_col) % col_count;
-        const lines_per_selis = lines_per_col * col_count;
-        const line_of_selis = line_indx % lines_per_selis;
-        if (line_of_selis == 0) {
-            if (window_row_index + 1 > window_rows.len) {
-                window_rows = window_rows_buf[0..window_row_index+1];
-            }
-            window_rows[window_row_index] = try std.mem.concat(alloc, u8, &.{""});
-            row_offset += 1;
-            window_row_index += 1;
-        }
-        // std.debug.print("{any} " ** 3 ++ "\n", .{line_indx, window_row_index, col_of_line});
-        if (window_row_index + 1 > window_rows.len) {
-            window_rows = window_rows_buf[0..window_row_index+1];
-        }
-        if (col_of_line == 0) {
-            const window_row_strings = &.{&line};
-            window_rows[window_row_index] = try std.mem.concat(alloc, u8, window_row_strings);
-        } else {
-            const window_row_strings = &.{window_rows[window_row_index], padding, &line};
-            window_rows[window_row_index] = try std.mem.concat(alloc, u8, window_row_strings);
-        }
-    }
+    const window_rows = try generateWindowRows(
+        alloc,
+        lines,
+        2,
+        5,
+        12
+    );
     defer {
         for (window_rows) |row| {
             alloc.free(row);
@@ -123,18 +45,10 @@ pub fn main() !void {
     for (window_rows) |row| {
         std.debug.print("{s}\n", .{row});
     }
-    // std.debug.print("{any}", .{window_rows[1]});
 
-    const stdout = std.io.getStdOut();
+    const win_size = try elicitWindowSize();
 
-    var winsize: std.posix.winsize = undefined;
-    const result = std.posix.system.ioctl(stdout.handle, std.posix.T.IOCGWINSZ, @intFromPtr(&winsize));
-    switch (std.posix.errno(result)) {
-        .SUCCESS => {},
-        else => return error.IoctlError,
-    }
-
-    std.debug.print("{any} {any}", .{winsize.col, winsize.row});
+    std.debug.print("{any} {any}", .{win_size.col, win_size.row});
 
 
     const len: usize = 400;
@@ -200,6 +114,107 @@ fn loadPages(
     }
 }
 
+fn parseLines(content: []const u8) ![][col_width]u8 {
+    var lines: [][col_width]u8 = lines_buf[0..1];
+    var line_index: u64 = 0;
+    var char_index: u64 = 0;
+    var is_newline = false;
+
+    for (content) |char_para| {
+        var char = char_para;
+        if (line_index >= lines_buf.len - 1) {
+            return error.LinesBufferFull;
+        }
+        
+        if (char == '\n') {
+            char = ' ';
+            is_newline = true;
+        }
+        lines[line_index][char_index] = char;
+        char_index += 1;
+
+
+        if (char_index == col_width or is_newline) {
+            is_newline = false;
+            
+            line_index += 1;
+            lines = lines_buf[0..line_index + 1];
+
+            if (char != ' ') {
+                const end_index = char_index;
+                while(char != ' ') {
+                    char_index -= 1;
+                    char = lines[line_index - 1][char_index];
+                }
+                const next_start_index = end_index - char_index - 1;
+                for (char_index + 1..end_index, 0..next_start_index) |i, j| {
+                    lines[line_index][j] = lines[line_index - 1][i];
+                    lines[line_index - 1][i] = ' ';
+                }
+                char_index = next_start_index;
+            } else {
+                char_index = 0;
+            }
+        }
+    }
+    return lines;
+}
+
+fn generateWindowRows(
+    alloc: std.mem.Allocator,
+    lines: [][col_width]u8,
+    col_count: u64,
+    col_gap: u64,
+    lines_per_col: u64
+    ) ![][]u8 {
+    var window_rows: [][]u8 = window_rows_buf[0..0];
+    const padding_buf = " " ** 100; // todo: maybe too short
+    var row_offset: u64 = 0;
+    for (lines, 0..) |line, line_indx| {
+        const padding = padding_buf[0..col_gap];
+        var window_row_index = row_offset + (line_indx / (lines_per_col*col_count)) * lines_per_col + line_indx % lines_per_col;
+        const col_of_line = (line_indx/lines_per_col) % col_count;
+        const lines_per_selis = lines_per_col * col_count;
+        const line_of_selis = line_indx % lines_per_selis;
+        if (line_of_selis == 0) {
+            if (window_row_index + 1 > window_rows.len) {
+                window_rows = window_rows_buf[0..window_row_index+1];
+            }
+            window_rows[window_row_index] = try std.mem.concat(alloc, u8, &.{""});
+            row_offset += 1;
+            window_row_index += 1;
+        }
+        // std.debug.print("{any} " ** 3 ++ "\n", .{line_indx, window_row_index, col_of_line});
+        if (window_row_index + 1 > window_rows.len) {
+            window_rows = window_rows_buf[0..window_row_index+1];
+        }
+        if (col_of_line == 0) {
+            const window_row_strings = &.{&line};
+            window_rows[window_row_index] = try std.mem.concat(alloc, u8, window_row_strings);
+        } else {
+            const window_row_strings = &.{window_rows[window_row_index], padding, &line};
+            window_rows[window_row_index] = try std.mem.concat(alloc, u8, window_row_strings);
+        }
+    }
+    return window_rows;
+}
+
+fn elicitWindowSize() !std.posix.winsize {
+    const stdout = std.io.getStdOut();
+
+    var winsize: std.posix.winsize = undefined;
+    const result = std.posix.system.ioctl(
+        stdout.handle,
+        std.posix.T.IOCGWINSZ,
+        @intFromPtr(&winsize)
+    );
+    switch (std.posix.errno(result)) {
+        .SUCCESS => {},
+        else => return error.IoctlError,
+    }
+    return winsize;
+}
+
 fn printAddr(addr_val: [16]u8) void {
     for (addr_val, 0..) |val, i| {
         std.debug.print("{x:0>2}", .{val});
@@ -208,4 +223,17 @@ fn printAddr(addr_val: [16]u8) void {
         }
     }
     std.debug.print("\n\n{any}\n\n\n", .{addr_val});
+}
+
+fn getWithFallback(map: std.StringHashMap([]const u8), id: []const u8) []const u8 {
+    return map.get(id) orelse map.get("/404") orelse "<err: missing /404>";
+}
+
+fn truncate(alloc: std.mem.Allocator, str: []const u8, len: u64) ![]const u8 {
+    if (str.len > len) {
+        const truncated = str[0..len];
+        return try std.mem.concat(alloc, u8, &.{truncated, "…\n"});
+    } else {
+        return str;
+    }
 }
