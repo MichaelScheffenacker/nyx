@@ -34,8 +34,9 @@ pub fn main() !void {
         alloc,
         lines,
         2,
-        5,
-        12
+        3,
+        24,
+        3
     );
     defer {
         for (window_rows) |row| {
@@ -165,7 +166,8 @@ fn generateWindowRows(
     lines: [][col_width]u8,
     col_count: u64,
     col_gap: u64,
-    lines_per_col: u64
+    lines_per_col: u64,
+    selis_gap: u64
     ) ![][]u8 {
     var window_rows: [][]u8 = window_rows_buf[0..0];
     const padding_buf = " " ** 100; // todo: maybe too short
@@ -177,12 +179,14 @@ fn generateWindowRows(
         const lines_per_selis = lines_per_col * col_count;
         const line_of_selis = line_indx % lines_per_selis;
         if (line_of_selis == 0) {
-            if (window_row_index + 1 > window_rows.len) {
-                window_rows = window_rows_buf[0..window_row_index+1];
+            for(0..selis_gap) |_| {
+                if (window_row_index + 1 > window_rows.len) {
+                    window_rows = window_rows_buf[0..window_row_index+1];
+                }
+                window_rows[window_row_index] = try std.mem.concat(alloc, u8, &.{""});
+                row_offset += 1;
+                window_row_index += 1;
             }
-            window_rows[window_row_index] = try std.mem.concat(alloc, u8, &.{""});
-            row_offset += 1;
-            window_row_index += 1;
         }
         // std.debug.print("{any} " ** 3 ++ "\n", .{line_indx, window_row_index, col_of_line});
         if (window_row_index + 1 > window_rows.len) {
