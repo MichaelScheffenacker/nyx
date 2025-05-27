@@ -35,7 +35,7 @@ pub fn main() !void {
         lines,
         2,
         3,
-        24,
+        12,
         3
     );
     defer {
@@ -174,6 +174,13 @@ fn generateWindowRows(
     var row_offset: u64 = 0;
     for (lines, 0..) |line, line_indx| {
         const padding = padding_buf[0..col_gap];
+        var compensation: []const u8 = padding_buf[0..0];
+        for (line) |byte| {
+            if(!isChar(byte)) {
+                std.debug.print("ln idx: {any}:{b}  ", .{line_indx,byte});
+                compensation = padding_buf[0..(compensation.len + 1)];
+            }
+        }
         var window_row_index = row_offset + (line_indx / (lines_per_col*col_count)) * lines_per_col + line_indx % lines_per_col;
         const col_of_line = (line_indx/lines_per_col) % col_count;
         const lines_per_selis = lines_per_col * col_count;
@@ -193,10 +200,10 @@ fn generateWindowRows(
             window_rows = window_rows_buf[0..window_row_index+1];
         }
         if (col_of_line == 0) {
-            const window_row_strings = &.{&line};
+            const window_row_strings = &.{&line, compensation};
             window_rows[window_row_index] = try std.mem.concat(alloc, u8, window_row_strings);
         } else {
-            const window_row_strings = &.{window_rows[window_row_index], padding, &line};
+            const window_row_strings = &.{window_rows[window_row_index], compensation, padding, &line};
             window_rows[window_row_index] = try std.mem.concat(alloc, u8, window_row_strings);
         }
     }
@@ -240,4 +247,8 @@ fn truncate(alloc: std.mem.Allocator, str: []const u8, len: u64) ![]const u8 {
     } else {
         return str;
     }
+}
+
+fn isChar(char: u8) bool {
+    return (char & 0b11000000) != 0b10000000;
 }
