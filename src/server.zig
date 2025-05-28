@@ -250,5 +250,25 @@ fn truncate(alloc: std.mem.Allocator, str: []const u8, len: u64) ![]const u8 {
 }
 
 fn isChar(char: u8) bool {
-    return (char & 0b11000000) != 0b10000000;
+    const two_bit_mask = 0b11000000;
+    const continuation_code_unit_marker = 0b10000000;
+
+    // There are a number of characters that do not occupy the space of 1 column in,
+    // the terminal, potentially among others:
+    // - Zero Width
+    //   - Zero Width Space (ZWSP) (U+200B)
+    //   - Zero Width Non-Joiner (ZWNJ) (U+200C)
+    //   - Zero Width Joiner (ZWJ) (U+200D)
+    //   - Word Joiner (WJ) (U+2060⁠)
+    //   - Zero Width No-Break Space (BOM, ZWNBSP) (U+FEFF)
+    // - Combining Marks
+    //   - Combining Diacritical Marks (Unicode block)
+    //   - Combining Diacritical Marks Supplement (Unicode block)
+    //   - Combining Diacritical Marks for Symbols (Unicode block)
+    //   - Combining Half Marks (Unicode block)
+    // - Some CJK Chracacters might take two columns in the terminal
+    //
+    // https://www.perlmonks.org/?node_id=713297 (The “real length" of UTF8 strings)
+    // https://stackoverflow.com/questions/79241895/c-strlen-returns-the-wrong-string-length-character-count-when-using-umlauts
+    return (char & two_bit_mask) != continuation_code_unit_marker;
 }
