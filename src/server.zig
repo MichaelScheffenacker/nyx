@@ -176,7 +176,7 @@ fn generateWindowRows(
         const padding = padding_buf[0..col_gap];
         var compensation: []const u8 = padding_buf[0..0];
         for (line) |byte| {
-            if(!isChar(byte)) {
+            if(!isSpacing(byte)) {
                 std.debug.print("ln idx: {any}:{b}  ", .{line_indx,byte});
                 compensation = padding_buf[0..(compensation.len + 1)];
             }
@@ -249,7 +249,7 @@ fn truncate(alloc: std.mem.Allocator, str: []const u8, len: u64) ![]const u8 {
     }
 }
 
-fn isChar(char: u8) bool {
+fn isSpacing(char: u8) bool {
     const two_bit_mask = 0b11000000;
     const continuation_code_unit_marker = 0b10000000;
 
@@ -259,6 +259,9 @@ fn isChar(char: u8) bool {
     //   - Zero Width Space (ZWSP) (U+200B)
     //   - Zero Width Non-Joiner (ZWNJ) (U+200C)
     //   - Zero Width Joiner (ZWJ) (U+200D)
+    //     This code point might even combine multiples code points to 
+    //     a singe glyph: 👨‍👨‍👧‍👧 = 👨\u200d👨\u200d👧\u200d👧 (the column counter
+    //     of VS Code jumps by 7)
     //   - Word Joiner (WJ) (U+2060⁠)
     //   - Zero Width No-Break Space (BOM, ZWNBSP) (U+FEFF)
     // - Combining Marks
@@ -267,8 +270,19 @@ fn isChar(char: u8) bool {
     //   - Combining Diacritical Marks for Symbols (Unicode block)
     //   - Combining Half Marks (Unicode block)
     // - Some CJK Chracacters might take two columns in the terminal
+    // - Control Characters https://en.wikipedia.org/wiki/Unicode_control_characters
+    //   - Most Control Characters of Unicode Block “Basic Latin” 0000–001F and 007F
+    //     - (Except the Format Effectors: BS, TAB, LF, VT, FF, and CR)
+    //   - Unicode Block “Latin-1 Supplement” 0080–009F
+    //   - Language Tags https://en.wikipedia.org/wiki/Tags_(Unicode_block)
+    //   - Interlinear Annotation https://en.wikipedia.org/wiki/Interlinear_gloss
+    //   - Ruby Characters https://en.wikipedia.org/wiki/Ruby_character
+    //   - Bidirectional text control https://en.wikipedia.org/wiki/Bidirectional_text
+    //   - Variation Selectors https://en.wikipedia.org/wiki/Variation_selector_(Unicode)
     //
     // https://www.perlmonks.org/?node_id=713297 (The “real length" of UTF8 strings)
     // https://stackoverflow.com/questions/79241895/c-strlen-returns-the-wrong-string-length-character-count-when-using-umlauts
+    // https://www.compart.com/en/unicode/block/U+0080
+
     return (char & two_bit_mask) != continuation_code_unit_marker;
 }
