@@ -182,7 +182,7 @@ fn generateWindowRows(
             const code_point_length = try utf8CodePointLength(code_unit);
             const code_point = line[code_unit_index..code_unit_index + code_point_length];
             // std.debug.print("ln idx: {any}:{any} [{any}..{any}]\n", .{code_point, code_point.len, code_unit_index, code_point_length});
-            line_spacing += spacing(code_point);
+            line_spacing += try spacing(code_point);
             code_unit_index += code_point_length;
         }
         const compensation_len = col_width - line_spacing;
@@ -255,7 +255,7 @@ fn truncate(alloc: std.mem.Allocator, str: []const u8, len: u64) ![]const u8 {
     }
 }
 
-fn spacing(code_point: []const u8) u64 {
+fn spacing(code_point: []const u8) !u64 {
 
     // There are a number of characters that do not occupy the space of 1 column in,
     // the terminal, potentially among others:
@@ -299,41 +299,24 @@ fn spacing(code_point: []const u8) u64 {
     // U+0800       U+FFFF      1110wwww    10xxxxyy    10yyzzzz
     // U+010000     U+10FFFF    11110uvv    10vvwwww    10xxxxyy    10yyzzzz
 
-    switch (code_point.len) {
-        1 => {
-            // 0yyyzzzz
-            return 1;
-        },
-        2 => {
-            // 110xxxyy 10yyzzzz
-            const first_combining_diacritical_mark_unicode_point = 0x0300;
-            const last_combining_diacritical_mark_unicode_point =  0x036F;
-            const z: u4 = @truncate(code_point[1]);
-            const y_lower: u2 = @truncate(code_point[1] >> 4);
-            const y_upper: u2 = @truncate(code_point[0]);
-            const y: u4 = (@as(u4, y_upper) << 2) + y_lower;
-            const x: u3 = @truncate(code_point[0] >> 2);
-            const unicode_point: u32 = (@as(u12, x) << 8) + (@as(u8, y) << 4) + z;
-
-            const is_combining_diacritical_mark = 
-                unicode_point >= first_combining_diacritical_mark_unicode_point and
-                unicode_point <= last_combining_diacritical_mark_unicode_point;
-
-            if (is_combining_diacritical_mark) {
-                return 0;
-            } else {
-                return 1;
-            }
-        },
-        3 => {
-            // 1110wwww 10xxxxyy 10yyzzzz
-            return 1;
-        },
-        4 => {
-            // 11110uvv 10vvwwww 10xxxxyy 10yyzzzz
-            return 1;
-        },
+    // const code_point_arr = code_point.ptr[0..code_point.len].*;
+    const unicode_point =  switch (code_point.len) {
+        1 => code_point,
+        2 => try std.unicode.utf8Decode2(code_point[0..2].*),
+        3 => try std.unicode.utf8Decode3(code_point[0..3].*),
+        4 => try std.unicode.utf8Decode4(code_point[0..4].*),
         else => unreachable
+    };
+    const first_combining_diacritical_mark_unicode_point = 0x0300;
+    const last_combining_diacritical_mark_unicode_point =  0x036F;
+    const is_combining_diacritical_mark = 
+        unicode_point >= first_combining_diacritical_mark_unicode_point and
+        unicode_point <= last_combining_diacritical_mark_unicode_point;
+
+    if (is_combining_diacritical_mark) {
+        return 0;
+    } else {
+        return 1;
     }
 }
 
@@ -382,6 +365,6 @@ fn utf8CodePointLength(code_unit: u8) !u3 {
 test "utf-8 spacing" {
     const a = [1]u8{0x61};
     const combining_grave_accent  = [2]u8{0xCC, 0x80};
-    try std.testing.expect(spacing(a[0..]) == 1);
-    try std.testing.expect(spacing(combining_grave_accent[0..]) == 0);
+    try std.testing.expect(try spacing(a[0..]) == 1);
+    try std.testing.expect(try spacing(combining_grave_accent[0..]) == 0);
 }
