@@ -118,43 +118,43 @@ fn loadPages(
 fn parseLines(content: []const u8) ![][col_width]u8 {
     var lines: [][col_width]u8 = lines_buf[0..1];
     var line_index: u64 = 0;
-    var char_index: u64 = 0;
+    var code_unit_index: u64 = 0;
     var is_newline = false;
 
-    for (content) |char_para| {
-        var char = char_para;
+    for (content) |code_unit_para| {
+        var code_unit = code_unit_para;
         if (line_index >= lines_buf.len - 1) {
             return error.LinesBufferFull;
         }
         
-        if (char == '\n') {
-            char = ' ';
+        if (code_unit == '\n') {
+            code_unit = ' ';
             is_newline = true;
         }
-        lines[line_index][char_index] = char;
-        char_index += 1;
+        lines[line_index][code_unit_index] = code_unit;
+        code_unit_index += 1;
 
 
-        if (char_index == col_width or is_newline) {
+        if (code_unit_index == col_width or is_newline) {
             is_newline = false;
             
             line_index += 1;
             lines = lines_buf[0..line_index + 1];
 
-            if (char != ' ') {
-                const end_index = char_index;
-                while(char != ' ') {
-                    char_index -= 1;
-                    char = lines[line_index - 1][char_index];
+            if (code_unit != ' ') {
+                const end_index = code_unit_index;
+                while(code_unit != ' ') {
+                    code_unit_index -= 1;
+                    code_unit = lines[line_index - 1][code_unit_index];
                 }
-                const next_start_index = end_index - char_index - 1;
-                for (char_index + 1..end_index, 0..next_start_index) |i, j| {
+                const next_start_index = end_index - code_unit_index - 1;
+                for (code_unit_index + 1..end_index, 0..next_start_index) |i, j| {
                     lines[line_index][j] = lines[line_index - 1][i];
                     lines[line_index - 1][i] = ' ';
                 }
-                char_index = next_start_index;
+                code_unit_index = next_start_index;
             } else {
-                char_index = 0;
+                code_unit_index = 0;
             }
         }
     }
@@ -172,15 +172,21 @@ fn generateWindowRows(
     var window_rows: [][]u8 = window_rows_buf[0..0];
     const padding_buf = " " ** 100; // todo: maybe too short
     var row_offset: u64 = 0;
+    // var compensation: []const u8 = padding_buf[0..0];
     for (lines, 0..) |line, line_indx| {
         const padding = padding_buf[0..col_gap];
-        var compensation: []const u8 = padding_buf[0..0];
-        for (line) |byte| {
-            if(!isSpacing(byte)) {
-                std.debug.print("ln idx: {any}:{b}  ", .{line_indx,byte});
-                compensation = padding_buf[0..(compensation.len + 1)];
-            }
+        var line_spacing: u64 = 0;
+        var code_unit_index: u64 = 0;
+        while (code_unit_index < line.len) {
+            const code_unit = line[code_unit_index];
+            const code_point_length = try utf8CodePointLength(code_unit);
+            const code_point = line[code_unit_index..code_unit_index + code_point_length];
+            // std.debug.print("ln idx: {any}:{any} [{any}..{any}]\n", .{code_point, code_point.len, code_unit_index, code_point_length});
+            line_spacing += spacing(code_point);
+            code_unit_index += code_point_length;
         }
+        const compensation_len = col_width - line_spacing;
+        const compensation = padding_buf[0..compensation_len];
         var window_row_index = row_offset + (line_indx / (lines_per_col*col_count)) * lines_per_col + line_indx % lines_per_col;
         const col_of_line = (line_indx/lines_per_col) % col_count;
         const lines_per_selis = lines_per_col * col_count;
@@ -249,9 +255,7 @@ fn truncate(alloc: std.mem.Allocator, str: []const u8, len: u64) ![]const u8 {
     }
 }
 
-fn isSpacing(char: u8) bool {
-    const two_bit_mask = 0b11000000;
-    const continuation_code_unit_marker = 0b10000000;
+fn spacing(code_point: []const u8) u64 {
 
     // There are a number of characters that do not occupy the space of 1 column in,
     // the terminal, potentially among others:
@@ -265,11 +269,10 @@ fn isSpacing(char: u8) bool {
     //   - Word Joiner (WJ) (U+2060⁠)
     //   - Zero Width No-Break Space (BOM, ZWNBSP) (U+FEFF)
     // - Combining Marks
-    //   - Combining Diacritical Marks (Unicode block)
-    //   - Combining Diacritical Marks Supplement (Unicode block)
-    //   - Combining Diacritical Marks for Symbols (Unicode block)
-    //   - Combining Half Marks (Unicode block)
-    // - Some CJK Chracacters might take two columns in the terminal
+    //   - Combining Diacritical Marks https://en.wikipedia.org/wiki/Combining_Diacritical_Marks
+    //   - Combining Diacritical Marks Supplement https://en.wikipedia.org/wiki/Combining_Diacritical_Marks_Supplement
+    //   - Combining Diacritical Marks for Symbols https://en.wikipedia.org/wiki/Combining_Diacritical_Marks_for_Symbols
+    //   - Combining Half Marks https://en.wikipedia.org/wiki/Combining_Diacritical_Marks_Extended
     // - Control Characters https://en.wikipedia.org/wiki/Unicode_control_characters
     //   - Most Control Characters of Unicode Block “Basic Latin” 0000–001F and 007F
     //     - (Except the Format Effectors: BS, TAB, LF, VT, FF, and CR)
@@ -279,10 +282,106 @@ fn isSpacing(char: u8) bool {
     //   - Ruby Characters https://en.wikipedia.org/wiki/Ruby_character
     //   - Bidirectional text control https://en.wikipedia.org/wiki/Bidirectional_text
     //   - Variation Selectors https://en.wikipedia.org/wiki/Variation_selector_(Unicode)
+    // - Some CJK Chracacters might take two columns in the terminal
     //
     // https://www.perlmonks.org/?node_id=713297 (The “real length" of UTF8 strings)
     // https://stackoverflow.com/questions/79241895/c-strlen-returns-the-wrong-string-length-character-count-when-using-umlauts
     // https://www.compart.com/en/unicode/block/U+0080
+    //
+    //
+    // Combining Diacritical Marks U+0300–U+036F
+    // 11001100(0xCC) 10000000(0x80) (U+0300 utf-8)
+    // 11010000(0xCD) 10101111(0xAF) (U+036F utf-8)
 
-    return (char & two_bit_mask) != continuation_code_unit_marker;
+    // First CP     Last CP     Byte 1      Byte 2      Byte 3      Byte 4
+    // U+0000       U+007F      0yyyzzzz
+    // U+0080       U+07FF      110xxxyy    10yyzzzz
+    // U+0800       U+FFFF      1110wwww    10xxxxyy    10yyzzzz
+    // U+010000     U+10FFFF    11110uvv    10vvwwww    10xxxxyy    10yyzzzz
+
+    switch (code_point.len) {
+        1 => {
+            // 0yyyzzzz
+            return 1;
+        },
+        2 => {
+            // 110xxxyy 10yyzzzz
+            const first_combining_diacritical_mark_unicode_point = 0x0300;
+            const last_combining_diacritical_mark_unicode_point =  0x036F;
+            const z: u4 = @truncate(code_point[1]);
+            const y_lower: u2 = @truncate(code_point[1] >> 4);
+            const y_upper: u2 = @truncate(code_point[0]);
+            const y: u4 = (@as(u4, y_upper) << 2) + y_lower;
+            const x: u3 = @truncate(code_point[0] >> 2);
+            const unicode_point: u32 = (@as(u12, x) << 8) + (@as(u8, y) << 4) + z;
+
+            const is_combining_diacritical_mark = 
+                unicode_point >= first_combining_diacritical_mark_unicode_point and
+                unicode_point <= last_combining_diacritical_mark_unicode_point;
+
+            if (is_combining_diacritical_mark) {
+                return 0;
+            } else {
+                return 1;
+            }
+        },
+        3 => {
+            // 1110wwww 10xxxxyy 10yyzzzz
+            return 1;
+        },
+        4 => {
+            // 11110uvv 10vvwwww 10xxxxyy 10yyzzzz
+            return 1;
+        },
+        else => unreachable
+    }
+}
+
+// returns the length of a utf-8 code point as count of its code units
+fn utf8CodePointLength(code_unit: u8) !u3 {
+    // A utf-8 code point (CP) is composed of 1 to 4 code units (CU) (a utf-8 code unit is 1 byte).
+    // The length of a code point is determined by the first bits of its first code unit:
+    // first CU length CP   in bytes    in bits
+    // 0xxxxxxx 1           1           8
+    // 110xxxxx 2           2           16
+    // 1110xxxx 3           3           24
+    // 11110xxx 4           4           32
+    // If a code point consists of more than one code unit every code unit after the first
+    // one is called a continuation code unit (CCU); it starts with the bist 10.
+    // 1. CU    1. CCU   2. CCU   3. CCU
+    // 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
+    // Every code unit that does not start with 0, 10, 110, 1110 or 11110 is invalid.
+    const one_bit_mask =    0b1_0000000;
+    const two_bit_mask =    0b11_000000;
+    const three_bit_mask =  0b111_00000;
+    const four_bit_mask =   0b1111_0000;
+    const five_bit_mask =   0b11111_000;
+    const single_code_unit_marker =         0b0_0000000;
+    const continuation_code_unit_marker =   0b10_000000;
+    const double_code_unit_marker =         0b110_00000;
+    const triple_code_unit_marker =         0b1110_0000;
+    const quadruple_code_unit_marker =      0b11110_000;
+    if (code_unit & one_bit_mask == single_code_unit_marker) {
+        return 1;
+    }
+    if (code_unit & three_bit_mask == double_code_unit_marker) {
+        return 2;
+    }
+    if (code_unit & four_bit_mask == triple_code_unit_marker) {
+        return 3;
+    }
+    if (code_unit & five_bit_mask == quadruple_code_unit_marker) {
+        return 4;
+    }
+    if (code_unit & two_bit_mask == continuation_code_unit_marker) {
+        return error.MissplacedUtf8ContinuationCodeUnit;
+    }
+    return error.InvalidUtf8CodeUnit;
+}
+
+test "utf-8 spacing" {
+    const a = [1]u8{0x61};
+    const combining_grave_accent  = [2]u8{0xCC, 0x80};
+    try std.testing.expect(spacing(a[0..]) == 1);
+    try std.testing.expect(spacing(combining_grave_accent[0..]) == 0);
 }
