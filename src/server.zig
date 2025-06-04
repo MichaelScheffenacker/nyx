@@ -7,7 +7,11 @@ const max_content_len = 65536;
 
 const col_width = 50;
 
-var lines_buf = [1][col_width]u8{[_]u8{' '} ** col_width} ** 1024;
+// Since a window column of text can be composed of many code points and even more bytes, for a given
+// column width the number of required bytes cannot be estimated. 
+// todo: change fixed length line buffers to a over all buffer where parts can be partitioned off for a line
+const line_buf_length = col_width * 5;
+var lines_buf = [1][line_buf_length]u8{[_]u8{0} ** line_buf_length} ** 1024;
 var window_rows_buf: [1024][]u8 = undefined;
 
 pub fn main() !void {
@@ -29,7 +33,7 @@ pub fn main() !void {
     }
 
     var content: []const u8 = page_map.get("/a.txt") orelse "<no entry>";
-    const lines = try parseLines(content);
+    const lines: [][line_buf_length]u8 = try parseLines(content);
 
     const window_rows = try generateWindowRows(
         alloc,
@@ -116,8 +120,8 @@ fn loadPages(
     }
 }
 
-fn parseLines(content: []const u8) ![][col_width]u8 {
-    var lines: [][col_width]u8 = lines_buf[0..1];
+fn parseLines(content: []const u8) ![][line_buf_length]u8 {
+    var lines: [][line_buf_length]u8 = lines_buf[0..1];
     var line_index: u64 = 0;
     var code_unit_index: u64 = 0;
     var is_newline = false;
@@ -164,7 +168,7 @@ fn parseLines(content: []const u8) ![][col_width]u8 {
 
 fn generateWindowRows(
     alloc: std.mem.Allocator,
-    lines: [][col_width]u8,
+    lines: [][line_buf_length]u8,
     col_count: u64,
     col_gap: u64,
     lines_per_col: u64,
@@ -178,7 +182,7 @@ fn generateWindowRows(
         const padding = padding_buf[0..col_gap];
         var line_spacing: u64 = 0;
         var code_unit_index: u64 = 0;
-        while (code_unit_index < line.len) {
+        while (code_unit_index < col_width) { //line.len) {
             const code_unit = line[code_unit_index];
             const code_point_length = try utf8.codePointLength(code_unit);
             const code_point = line[code_unit_index..code_unit_index + code_point_length];
@@ -207,10 +211,10 @@ fn generateWindowRows(
             window_rows = window_rows_buf[0..window_row_index+1];
         }
         if (col_of_line == 0) {
-            const window_row_strings = &.{&line, compensation};
+            const window_row_strings = &.{&line, compensation[0..]};
             window_rows[window_row_index] = try std.mem.concat(alloc, u8, window_row_strings);
         } else {
-            const window_row_strings = &.{window_rows[window_row_index], compensation, padding, &line};
+            const window_row_strings = &.{window_rows[window_row_index], padding, &line, compensation[0..]};
             window_rows[window_row_index] = try std.mem.concat(alloc, u8, window_row_strings);
         }
     }
