@@ -107,6 +107,28 @@ pub fn codePointLength(code_unit: u8) !u3 {
     return error.InvalidUtf8CodeUnit;
 }
 
+pub fn isWordSeparator(code_point: []const u8) !bool {
+    const unicode_point: u21 = try cp_2_unicode_point(code_point);
+    //todo: implement all valid word separators
+    return unicode_point == ' ';
+}
+
+pub fn isLineSeperator(code_point: []const u8) !bool {
+    const unicode_point: u21 = try cp_2_unicode_point(code_point);
+    //todo: implement all valid line separators
+    return unicode_point == '\n';
+}
+
+fn cp_2_unicode_point(code_point: []const u8) !u21 {
+    return switch (code_point.len) {
+        1 => code_point[0],
+        2 => try std.unicode.utf8Decode2(code_point[0..2].*),
+        3 => try std.unicode.utf8Decode3(code_point[0..3].*),
+        4 => try std.unicode.utf8Decode4(code_point[0..4].*),
+        else => unreachable
+    };
+}
+
 test "utf-8 spacing" {
     const a = [1]u8{0x61};
     const combining_grave_accent  = [2]u8{0xCC, 0x80};

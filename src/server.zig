@@ -7,9 +7,9 @@ const max_content_len = 65536;
 
 const col_width = 50;
 
-// Since a window column of text can be composed of many code points and even more bytes, for a given
-// column width the number of required bytes cannot be estimated. 
-// todo: change fixed length line buffers to a over all buffer where parts can be partitioned off for a line
+/// Since a window column of text can be composed of many code points and even more bytes, for a given
+/// column width the number of required bytes cannot be estimated. 
+/// todo: change fixed length line buffers to a over all buffer where parts can be partitioned off for a line
 const line_buf_length = col_width * 5;
 var lines_buf = [1][line_buf_length]u8{[_]u8{0} ** line_buf_length} ** 1024;
 var window_rows_buf: [1024][]u8 = undefined;
@@ -123,30 +123,44 @@ fn loadPages(
 fn parseLines(content: []const u8) ![][line_buf_length]u8 {
     var lines: [][line_buf_length]u8 = lines_buf[0..1];
     var line_index: u64 = 0;
-    var code_unit_index: u64 = 0;
+    var line_spacing: u64 = 0;
     var is_newline = false;
 
-    for (content) |code_unit_para| {
-        var code_unit = code_unit_para;
+    var code_unit_index: u64 = 0;
+    while (code_unit_index < content.len) {
         if (line_index >= lines_buf.len - 1) {
             return error.LinesBufferFull;
         }
+
+        var code_unit = content[code_unit_index];
+        const code_point_length = try utf8.codePointLength(code_unit);
+        const code_point = content[code_unit_index..code_unit_index + code_point_length];
+        // std.debug.print("{s}", .{code_point}); ////////////////////
         
-        if (code_unit == '\n') {
+        if (try utf8.isLineSeperator(code_point)) {
             code_unit = ' ';
             is_newline = true;
         }
-        lines[line_index][code_unit_index] = code_unit;
-        code_unit_index += 1;
+
+        if (code_unit_index + code_point.len >= line_buf_length) {
+            return error.LineBufferExhausted;
+        }
+        for (code_point, 0..) |code_unit_loc, i| {
+            lines[line_index][code_unit_index + i] = code_unit_loc;
+        }
+
+        code_unit_index += code_point_length;
+        line_spacing += try utf8.spacing(code_point);
 
 
-        if (code_unit_index == col_width or is_newline) {
+        if (line_spacing >= col_width or is_newline) {
             is_newline = false;
+            std.debug.print("{s}\n", .{lines[line_index]}); /////////////////
             
             line_index += 1;
             lines = lines_buf[0..line_index + 1];
 
-            if (code_unit != ' ') {
+            if (code_unit != ' ' and code_unit_index > 1) {
                 const end_index = code_unit_index;
                 while(code_unit != ' ') {
                     code_unit_index -= 1;
@@ -161,6 +175,7 @@ fn parseLines(content: []const u8) ![][line_buf_length]u8 {
             } else {
                 code_unit_index = 0;
             }
+            line_spacing = 0;
         }
     }
     return lines;
