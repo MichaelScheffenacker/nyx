@@ -99,7 +99,7 @@ fn loadPages(
         ) {
             continue;
         }
-
+    
         const id_strings = &.{"/", file.name};
         const page_id = try std.mem.concat(alloc, u8, id_strings);
 
@@ -202,6 +202,10 @@ fn parseLines(content: []const u8) ![][line_buf_len]u8 {
         code_unit_index += code_point_len;
 
     }
+    for (word, 0..) |code_unit_loc, i| {
+        lines[line_index][line_len + i] = code_unit_loc;
+    }
+    line_len += word.len;
     return lines;
 }
 
