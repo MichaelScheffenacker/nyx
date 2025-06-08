@@ -12,7 +12,7 @@ const col_width = 50;
 /// todo: change fixed length line buffers to a over all buffer where parts can be partitioned off for a line
 const line_buf_len = col_width * 5;
 var lines_buf = [1][line_buf_len]u8{[_]u8{0} ** line_buf_len} ** 1024;
-var window_rows_buf: [1024][]u8 = undefined;
+var window_rows_buf = [1][line_buf_len*2]u8{[_]u8{0} ** (line_buf_len*2)} ** 1024;
 
 pub fn main() !void {
 
@@ -26,31 +26,23 @@ pub fn main() !void {
     try loadPages(server_dir_path, &page_map, alloc);
     listPages(&page_map);
 
-    var content: []const u8 = page_map.get("/b.txt") orelse "<no entry>";
+    var content: []const u8 = page_map.get("/a.txt") orelse "<no entry>";
     // std.debug.print("{any} {s}\n", .{content.len, content});
     const lines: [][line_buf_len]u8 = try parseLines(content);
 
     const window_rows = try generateWindowRows(
-        alloc,
         lines,
         2,
         3,
         12,
         3
     );
-    defer {
-        for (window_rows) |row| {
-            alloc.free(row);
-        }
-    }
     for (window_rows) |row| {
         std.debug.print("{s}\n", .{row});
     }
 
     const win_size = try elicitWindowSize();
-
     std.debug.print("win cols/rows: {any}/{any}\n", .{win_size.col, win_size.row});
-
 
     const len: usize = 400;
     var buf = [_]u8{0} ** len;
@@ -145,7 +137,6 @@ fn parseLines(content: []const u8) ![][line_buf_len]u8 {
             return error.LinesBufferFull;
         }
 
-        //////////////////////////////////////////////////////
         var code_unit = content[code_unit_index];
         const code_point_len = try utf8.codePointLength(code_unit);
         const code_point = content[code_unit_index .. (code_unit_index + code_point_len)];
@@ -169,6 +160,8 @@ fn parseLines(content: []const u8) ![][line_buf_len]u8 {
                 for (line_spacing+1 .. col_width+1) |i| {
                     lines[line_index][i] = ' ';
                 }
+        //////////////////////////////////////////////////////////////////////////////////////////////////////////////
+                std.debug.print("comp:{any} len:{any} space:{any} point:{any}\n", .{col_width-line_spacing, line_len, line_spacing, code_point});
                 line_len = 0;
                 line_spacing = 0;
                 line_index += 1;
@@ -181,7 +174,10 @@ fn parseLines(content: []const u8) ![][line_buf_len]u8 {
             // the suffixing word separator is appended to a line even if it is exceeding the column width
             // todo: prevent exceedance of line buffer
             for (code_point, 0..) |code_unit_loc, i| {
-                lines[line_index][line_len + i] = code_unit_loc ;
+                _ = code_unit_loc;
+                lines[line_index][line_len + 3*i] = '_' ;
+                lines[line_index][line_len + 3*i+1] = '_' ;
+                lines[line_index][line_len + 3*i+2] = '_' ;
             }
             line_len += code_point_len;
             line_spacing += word_spacing + code_point_spacing;
@@ -202,6 +198,7 @@ fn parseLines(content: []const u8) ![][line_buf_len]u8 {
         code_unit_index += code_point_len;
 
     }
+    // append last word
     for (word, 0..) |code_unit_loc, i| {
         lines[line_index][line_len + i] = code_unit_loc;
     }
@@ -210,31 +207,26 @@ fn parseLines(content: []const u8) ![][line_buf_len]u8 {
 }
 
 fn generateWindowRows(
-    alloc: std.mem.Allocator,
     lines: [][line_buf_len]u8,
     col_count: u64,
     col_gap: u64,
     lines_per_col: u64,
     selis_gap: u64
     ) ![][]u8 {
-    var window_rows: [][]u8 = window_rows_buf[0..0];
-    const padding_buf = " " ** 100; // todo: maybe too short
+    var rows_slices: [1024]([]u8) = undefined;
+    for (rows_slices, 0..) |_, i| {
+        rows_slices[i] = window_rows_buf[i][0..0];
+    }
+    var window_rows: [][]u8 = rows_slices[0..0];
     var row_offset: u64 = 0;
-    // var compensation: []const u8 = padding_buf[0..0];
     for (lines, 0..) |line, line_indx| {
-        const padding = padding_buf[0..col_gap];
-        // var line_spacing: u64 = 0;
-        // var code_unit_index: u64 = 0;
-        // while (code_unit_index < col_width) { //line.len) {
-        //     const code_unit = line[code_unit_index];
-        //     const code_point_length = try utf8.codePointLength(code_unit);
-        //     const code_point = line[code_unit_index..code_unit_index + code_point_length];
-        //     // std.debug.print("ln idx: {any}:{any} [{any}..{any}]\n", .{code_point, code_point.len, code_unit_index, code_point_length});
-        //     line_spacing += try utf8.spacing(code_point);
-        //     code_unit_index += code_point_length;
-        // }
-        // const compensation_len = col_width - line_spacing;
-        // const compensation = padding_buf[0..compensation_len];
+        // std.debug.print("{s}\n", .{line});  ////////////////
+
+        var code_unit_index: u64 = 0;
+        while (line[code_unit_index] != 0 and code_unit_index < line_buf_len) {
+            code_unit_index += 1;
+        }
+        const line_len = code_unit_index;
         var window_row_index = row_offset + (line_indx / (lines_per_col*col_count)) * lines_per_col + line_indx % lines_per_col;
         const col_of_line = (line_indx/lines_per_col) % col_count;
         const lines_per_selis = lines_per_col * col_count;
@@ -242,24 +234,34 @@ fn generateWindowRows(
         if (line_of_selis == 0) {
             for(0..selis_gap) |_| {
                 if (window_row_index + 1 > window_rows.len) {
-                    window_rows = window_rows_buf[0..window_row_index+1];
+                    window_rows = rows_slices[0..window_row_index+1];
                 }
-                window_rows[window_row_index] = try std.mem.concat(alloc, u8, &.{""});
+                const pos = window_rows[window_row_index].len;
+                window_rows[window_row_index] = window_rows_buf[window_row_index][0 .. pos+1];
+                window_rows[window_row_index][0] = ' ';
                 row_offset += 1;
                 window_row_index += 1;
             }
         }
-        // std.debug.print("{any} " ** 3 ++ "\n", .{line_indx, window_row_index, col_of_line});
         if (window_row_index + 1 > window_rows.len) {
-            window_rows = window_rows_buf[0..window_row_index+1];
+            window_rows = rows_slices[0..window_row_index+1];
         }
-        if (col_of_line == 0) {
-            const window_row_strings = &.{&line};
-            window_rows[window_row_index] = try std.mem.concat(alloc, u8, window_row_strings);
-        } else {
-            const window_row_strings = &.{window_rows[window_row_index], padding, &line};
-            window_rows[window_row_index] = try std.mem.concat(alloc, u8, window_row_strings);
+        
+        var pos = window_rows[window_row_index].len;
+        if (col_of_line != 0) {
+            window_rows[window_row_index] = window_rows_buf[window_row_index][0 .. pos+col_gap];
+            for (pos .. pos+col_gap) |i| {
+                window_rows[window_row_index][i] = ' ';
+            }
+            pos += col_gap;
+        } 
+        window_rows[window_row_index] = window_rows_buf[window_row_index][0 .. pos+line_len];
+        for (0 .. line_len) |i| {
+            // std.debug.print("{s}", .{line[i]});
+            window_rows[window_row_index][pos + i] = line[i];
         }
+        ///////////////////////////////////////////
+        std.debug.print("{s}({any}/{any})\n", .{window_rows[window_row_index], pos, window_rows[window_row_index].len});
     }
     return window_rows;
 }
