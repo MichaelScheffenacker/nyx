@@ -24,15 +24,10 @@ pub fn main() !void {
     var page_map = std.StringHashMap([]const u8).init(alloc);
     defer page_map.deinit();
     try loadPages(server_dir_path, &page_map, alloc);
+    listPages(&page_map);
 
-    var  page_iterator = page_map.iterator();
-    while (page_iterator.next()) |page| {
-        const truncated_page_content = try truncate(alloc, page.value_ptr.*, 50 );
-        defer alloc.free(truncated_page_content);
-        std.debug.print("{s}: {s}", .{page.key_ptr.*, truncated_page_content});
-    }
-
-    var content: []const u8 = page_map.get("/a.txt") orelse "<no entry>";
+    var content: []const u8 = page_map.get("/b.txt") orelse "<no entry>";
+    // std.debug.print("{any} {s}\n", .{content.len, content});
     const lines: [][line_buf_len]u8 = try parseLines(content);
 
     const window_rows = try generateWindowRows(
@@ -54,7 +49,7 @@ pub fn main() !void {
 
     const win_size = try elicitWindowSize();
 
-    std.debug.print("{any} {any}", .{win_size.col, win_size.row});
+    std.debug.print("win cols/rows: {any}/{any}\n", .{win_size.col, win_size.row});
 
 
     const len: usize = 400;
@@ -120,6 +115,19 @@ fn loadPages(
     }
 }
 
+fn listPages(page_map: *std.StringHashMap([]const u8)) void {
+    var  page_iterator = page_map.iterator();
+    while (page_iterator.next()) |page| {
+        const page_content = page.value_ptr.*;
+        const trucated_len = if (page_content.len < col_width) page_content.len else col_width;
+        var truncated_page_content = [1]u8{0} ** col_width;
+        for (0..trucated_len) |i| {
+            truncated_page_content[i] = if (page_content[i] == '\n') ' ' else page_content[i];
+        }
+        std.debug.print("{s}: {s}\n", .{page.key_ptr.*, truncated_page_content});
+    }
+}
+
 fn parseLines(content: []const u8) ![][line_buf_len]u8 {
     var lines: [][line_buf_len]u8 = lines_buf[0..1];
     var line_index: u64 = 0;
@@ -137,6 +145,7 @@ fn parseLines(content: []const u8) ![][line_buf_len]u8 {
             return error.LinesBufferFull;
         }
 
+        //////////////////////////////////////////////////////
         var code_unit = content[code_unit_index];
         const code_point_len = try utf8.codePointLength(code_unit);
         const code_point = content[code_unit_index .. (code_unit_index + code_point_len)];
@@ -148,11 +157,18 @@ fn parseLines(content: []const u8) ![][line_buf_len]u8 {
         }
 
         const code_point_spacing = try utf8.spacing(code_point);
+        if (code_point_spacing != 1 or code_point_len != 1) {
+            std.debug.print("o{s} {any} {any} {X:0>4}\n", .{code_point, code_point_spacing, code_point_len, try utf8.cp_2_unicode_point(code_point)});
+        }
         
         // ### lines and words ###
         const init_word_len = word.len;
-        if (try utf8.isWordSeparator(code_point)) {
+        if (try utf8.isWordSeparator(code_point) or code_unit == '\n') {
             if (line_spacing + word_spacing >= col_width) {
+                // compenstion padding
+                for (line_spacing+1 .. col_width+1) |i| {
+                    lines[line_index][i] = ' ';
+                }
                 line_len = 0;
                 line_spacing = 0;
                 line_index += 1;
@@ -203,18 +219,18 @@ fn generateWindowRows(
     // var compensation: []const u8 = padding_buf[0..0];
     for (lines, 0..) |line, line_indx| {
         const padding = padding_buf[0..col_gap];
-        var line_spacing: u64 = 0;
-        var code_unit_index: u64 = 0;
-        while (code_unit_index < col_width) { //line.len) {
-            const code_unit = line[code_unit_index];
-            const code_point_length = try utf8.codePointLength(code_unit);
-            const code_point = line[code_unit_index..code_unit_index + code_point_length];
-            // std.debug.print("ln idx: {any}:{any} [{any}..{any}]\n", .{code_point, code_point.len, code_unit_index, code_point_length});
-            line_spacing += try utf8.spacing(code_point);
-            code_unit_index += code_point_length;
-        }
-        const compensation_len = col_width - line_spacing;
-        const compensation = padding_buf[0..compensation_len];
+        // var line_spacing: u64 = 0;
+        // var code_unit_index: u64 = 0;
+        // while (code_unit_index < col_width) { //line.len) {
+        //     const code_unit = line[code_unit_index];
+        //     const code_point_length = try utf8.codePointLength(code_unit);
+        //     const code_point = line[code_unit_index..code_unit_index + code_point_length];
+        //     // std.debug.print("ln idx: {any}:{any} [{any}..{any}]\n", .{code_point, code_point.len, code_unit_index, code_point_length});
+        //     line_spacing += try utf8.spacing(code_point);
+        //     code_unit_index += code_point_length;
+        // }
+        // const compensation_len = col_width - line_spacing;
+        // const compensation = padding_buf[0..compensation_len];
         var window_row_index = row_offset + (line_indx / (lines_per_col*col_count)) * lines_per_col + line_indx % lines_per_col;
         const col_of_line = (line_indx/lines_per_col) % col_count;
         const lines_per_selis = lines_per_col * col_count;
@@ -234,10 +250,10 @@ fn generateWindowRows(
             window_rows = window_rows_buf[0..window_row_index+1];
         }
         if (col_of_line == 0) {
-            const window_row_strings = &.{&line, compensation[0..]};
+            const window_row_strings = &.{&line};
             window_rows[window_row_index] = try std.mem.concat(alloc, u8, window_row_strings);
         } else {
-            const window_row_strings = &.{window_rows[window_row_index], padding, &line, compensation[0..]};
+            const window_row_strings = &.{window_rows[window_row_index], padding, &line};
             window_rows[window_row_index] = try std.mem.concat(alloc, u8, window_row_strings);
         }
     }

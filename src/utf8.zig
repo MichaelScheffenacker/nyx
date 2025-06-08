@@ -119,7 +119,7 @@ pub fn isLineSeperator(code_point: []const u8) !bool {
     return unicode_point == '\n';
 }
 
-fn cp_2_unicode_point(code_point: []const u8) !u21 {
+pub fn cp_2_unicode_point(code_point: []const u8) !u21 {
     return switch (code_point.len) {
         1 => code_point[0],
         2 => try std.unicode.utf8Decode2(code_point[0..2].*),
