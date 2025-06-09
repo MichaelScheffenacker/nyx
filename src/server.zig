@@ -127,8 +127,6 @@ fn parseLines(content: []const u8) ![][line_buf_len]u8 {
     var line_len: u64 = 0;
 
     var code_unit_index: u64 = 0;
-    // var line_buf = [1]u8{0} ** line_buf_len;
-    // var line = line_buf[0..0];
     var word_buf = [1]u8{0} ** line_buf_len;
     var word: []u8 = word_buf[0..0];
     var word_spacing: u64 = 0;
@@ -149,9 +147,9 @@ fn parseLines(content: []const u8) ![][line_buf_len]u8 {
         
         // ### lines and words ###
         var word_len = word.len;
-        if (try utf8.isWordSeparator(code_point) or code_unit == '\n') {
+        if (try utf8.isWordSeparator(code_point) or try utf8.isLineSeperator(code_point)) {
 
-            if (code_unit == '\n') {
+            if (try utf8.isLineSeperator(code_point)) {
                 for (word, 0..) |code_unit_loc, i| {
                     lines[line_index][line_len + i] = code_unit_loc;
                 }
@@ -161,7 +159,7 @@ fn parseLines(content: []const u8) ![][line_buf_len]u8 {
                 word_spacing = 0;
             }
 
-            if (line_spacing + word_spacing >= col_width or code_unit == '\n') {
+            if (line_spacing + word_spacing >= col_width or try utf8.isLineSeperator(code_point)) {
 
                 // compensation padding
                 for (0 .. col_width-line_spacing) |i| {
@@ -169,9 +167,24 @@ fn parseLines(content: []const u8) ![][line_buf_len]u8 {
                 }
         //////////////////////////////////////////////////////////////////////////////////////////////////////////////
                 // std.debug.print("comp:{any} len:{any} space:{any} point:{any}\n", .{col_width-line_spacing, line_len, line_spacing, code_point});
+
+                // add additional empty line in case of line break
+                if (try utf8.isLineSeperator(code_point)) {
+                    line_index += 1;
+                    if (line_index >= lines_buf.len - 1) {
+                        return error.LinesBufferFull;
+                    }
+                    lines = lines_buf[0..line_index + 1];
+                    lines[line_index][0] = ' ';
+                }
+
+                // add new line
                 line_len = 0;
                 line_spacing = 0;
                 line_index += 1;
+                if (line_index >= lines_buf.len - 1) {
+                    return error.LinesBufferFull;
+                }
                 lines = lines_buf[0..line_index + 1];
             }
             for (word, 0..) |code_unit_loc, i| {
@@ -180,7 +193,7 @@ fn parseLines(content: []const u8) ![][line_buf_len]u8 {
             line_len += word_len;
             // the suffixing word separator is appended to a line even if it is exceeding the column width
             // todo: prevent exceedance of line buffer
-            if (code_unit != '\n') {
+            if (! try utf8.isLineSeperator(code_point)) {
                 for (code_point, 0..) |code_unit_loc, i| {
                     lines[line_index][line_len + i] = code_unit_loc ;
                 }
@@ -196,7 +209,6 @@ fn parseLines(content: []const u8) ![][line_buf_len]u8 {
             }
             word = word_buf[0..word_len + code_point_len];
             for (code_point, 0..) |code_unit_loc, i| {
-                // lines[line_index][code_unit_index + i] = code_unit_loc;
                 word[word_len + i] = code_unit_loc;
             }
             word_spacing += code_point_spacing;
