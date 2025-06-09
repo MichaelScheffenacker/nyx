@@ -114,7 +114,7 @@ fn listPages(page_map: *std.StringHashMap([]const u8)) void {
         const trucated_len = if (page_content.len < col_width) page_content.len else col_width;
         var truncated_page_content = [1]u8{0} ** col_width;
         for (0..trucated_len) |i| {
-            truncated_page_content[i] = if (page_content[i] == '\n') ' ' else page_content[i];
+            truncated_page_content[i] = if (page_content[i] == '\n') '-' else page_content[i];
         }
         std.debug.print("{s}: {s}\n", .{page.key_ptr.*, truncated_page_content});
     }
@@ -137,15 +137,10 @@ fn parseLines(content: []const u8) ![][line_buf_len]u8 {
             return error.LinesBufferFull;
         }
 
-        var code_unit = content[code_unit_index];
+        const code_unit = content[code_unit_index];
         const code_point_len = try utf8.codePointLength(code_unit);
         const code_point = content[code_unit_index .. (code_unit_index + code_point_len)];
         // std.debug.print("{s}", .{code_point}); ////////////////////
-        
-        if (try utf8.isLineSeperator(code_point)) {
-            // todo: if the line separator's code_point_len is longer than 1, this will mess everything up
-            code_unit = ' ';
-        }
 
         const code_point_spacing = try utf8.spacing(code_point);
         // if (code_point_spacing != 1 or code_point_len != 1) {
@@ -153,9 +148,20 @@ fn parseLines(content: []const u8) ![][line_buf_len]u8 {
         // }
         
         // ### lines and words ###
-        const init_word_len = word.len;
+        var word_len = word.len;
         if (try utf8.isWordSeparator(code_point) or code_unit == '\n') {
-            if (line_spacing + word_spacing >= col_width) {
+
+            if (code_unit == '\n') {
+                for (word, 0..) |code_unit_loc, i| {
+                    lines[line_index][line_len + i] = code_unit_loc;
+                }
+                line_len += word_len;
+                word_len = 0;
+                word = word_buf[0..0];
+                word_spacing = 0;
+            }
+
+            if (line_spacing + word_spacing >= col_width or code_unit == '\n') {
 
                 // compensation padding
                 for (0 .. col_width-line_spacing) |i| {
@@ -171,29 +177,27 @@ fn parseLines(content: []const u8) ![][line_buf_len]u8 {
             for (word, 0..) |code_unit_loc, i| {
                 lines[line_index][line_len + i] = code_unit_loc;
             }
-            line_len += init_word_len;
+            line_len += word_len;
             // the suffixing word separator is appended to a line even if it is exceeding the column width
             // todo: prevent exceedance of line buffer
-            for (code_point, 0..) |code_unit_loc, i| {
-                _ = code_unit_loc;
-                const char = ' ';
-                lines[line_index][line_len + i] = char ;
-                // lines[line_index][line_len + 3*i+1] = char ;
-                // lines[line_index][line_len + 3*i+2] = char ;
+            if (code_unit != '\n') {
+                for (code_point, 0..) |code_unit_loc, i| {
+                    lines[line_index][line_len + i] = code_unit_loc ;
+                }
+                line_len += code_point_len;
+                line_spacing += word_spacing + code_point_spacing;
             }
-            line_len += code_point_len;
-            line_spacing += word_spacing + code_point_spacing;
             word = word_buf[0..0];
             word_spacing = 0;
         // ### words ###
         } else {
-            if (init_word_len + code_point_len >= line_buf_len) {
+            if (word_len + code_point_len >= line_buf_len) {
                 return error.WordBufferExhausted;
             }
-            word = word_buf[0..init_word_len + code_point_len];
+            word = word_buf[0..word_len + code_point_len];
             for (code_point, 0..) |code_unit_loc, i| {
                 // lines[line_index][code_unit_index + i] = code_unit_loc;
-                word[init_word_len + i] = code_unit_loc;
+                word[word_len + i] = code_unit_loc;
             }
             word_spacing += code_point_spacing;
         }
@@ -222,7 +226,7 @@ fn generateWindowRows(
     var window_rows: [][]u8 = rows_slices[0..0];
     var row_offset: u64 = 0;
     for (lines, 0..) |line, line_indx| {
-        // std.debug.print("{s}\n", .{line});  ////////////////
+        // std.debug.print("{any}\n", .{line});  /////////////////////////////
 
         var code_unit_index: u64 = 0;
         while (line[code_unit_index] != 0 and code_unit_index < line_buf_len) {
