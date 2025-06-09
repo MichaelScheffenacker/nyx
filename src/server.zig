@@ -147,37 +147,14 @@ fn parseLines(content: []const u8) ![][line_buf_len]u8 {
         
         // ### lines and words ###
         var word_len = word.len;
-        if (try utf8.isWordSeparator(code_point) or try utf8.isLineSeperator(code_point)) {
+        if (try utf8.isWordSeparator(code_point)) {
 
-            if (try utf8.isLineSeperator(code_point)) {
-                for (word, 0..) |code_unit_loc, i| {
-                    lines[line_index][line_len + i] = code_unit_loc;
-                }
-                line_len += word_len;
-                word_len = 0;
-                word = word_buf[0..0];
-                word_spacing = 0;
-            }
-
-            if (line_spacing + word_spacing >= col_width or try utf8.isLineSeperator(code_point)) {
+            if (line_spacing + word_spacing >= col_width) {
 
                 // compensation padding
                 for (0 .. col_width-line_spacing) |i| {
                     lines[line_index][line_len + i] = ' ';
                 }
-        //////////////////////////////////////////////////////////////////////////////////////////////////////////////
-                // std.debug.print("comp:{any} len:{any} space:{any} point:{any}\n", .{col_width-line_spacing, line_len, line_spacing, code_point});
-
-                // add additional empty line in case of line break
-                if (try utf8.isLineSeperator(code_point)) {
-                    line_index += 1;
-                    if (line_index >= lines_buf.len - 1) {
-                        return error.LinesBufferFull;
-                    }
-                    lines = lines_buf[0..line_index + 1];
-                    lines[line_index][0] = ' ';
-                }
-
                 // add new line
                 line_len = 0;
                 line_spacing = 0;
@@ -193,17 +170,41 @@ fn parseLines(content: []const u8) ![][line_buf_len]u8 {
             line_len += word_len;
             // the suffixing word separator is appended to a line even if it is exceeding the column width
             // todo: prevent exceedance of line buffer
-            if (! try utf8.isLineSeperator(code_point)) {
-                for (code_point, 0..) |code_unit_loc, i| {
-                    lines[line_index][line_len + i] = code_unit_loc ;
-                }
-                line_len += code_point_len;
-                line_spacing += word_spacing + code_point_spacing;
+            for (code_point, 0..) |code_unit_loc, i| {
+                lines[line_index][line_len + i] = code_unit_loc ;
             }
+            line_len += code_point_len;
+            line_spacing += word_spacing + code_point_spacing;
             word = word_buf[0..0];
             word_spacing = 0;
-        // ### words ###
-        } else {
+        } else if (try utf8.isLineSeperator(code_point)) {
+
+            for (word, 0..) |code_unit_loc, i| {
+                lines[line_index][line_len + i] = code_unit_loc;
+            }
+            line_len += word_len;
+            word_len = 0;
+            word = word_buf[0..0];
+            word_spacing = 0;
+
+            // compensation padding
+            for (0 .. col_width-line_spacing) |i| {
+                lines[line_index][line_len + i] = ' ';
+            }
+
+            line_index += 1;
+            if (line_index >= lines_buf.len - 2) {
+                return error.LinesBufferFull;
+            }
+            lines = lines_buf[0..line_index + 2];
+            lines[line_index][0] = ' ';  // add additional empty line
+
+            // new line
+            line_len = 0;
+            line_spacing = 0;
+            line_index += 1;
+        
+        } else {  // ### words ###
             if (word_len + code_point_len >= line_buf_len) {
                 return error.WordBufferExhausted;
             }
