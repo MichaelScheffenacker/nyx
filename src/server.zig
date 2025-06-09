@@ -143,25 +143,26 @@ fn parseLines(content: []const u8) ![][line_buf_len]u8 {
         // std.debug.print("{s}", .{code_point}); ////////////////////
         
         if (try utf8.isLineSeperator(code_point)) {
-            // todo: if the line separator is longer than 1, this will mess everything up
+            // todo: if the line separator's code_point_len is longer than 1, this will mess everything up
             code_unit = ' ';
         }
 
         const code_point_spacing = try utf8.spacing(code_point);
-        if (code_point_spacing != 1 or code_point_len != 1) {
-            std.debug.print("o{s} {any} {any} {X:0>4}\n", .{code_point, code_point_spacing, code_point_len, try utf8.cp_2_unicode_point(code_point)});
-        }
+        // if (code_point_spacing != 1 or code_point_len != 1) {
+        //     std.debug.print("o{s} {any} {any} {X:0>4}\n", .{code_point, code_point_spacing, code_point_len, try utf8.cp_2_unicode_point(code_point)});
+        // }
         
         // ### lines and words ###
         const init_word_len = word.len;
         if (try utf8.isWordSeparator(code_point) or code_unit == '\n') {
             if (line_spacing + word_spacing >= col_width) {
-                // compenstion padding
-                for (line_spacing+1 .. col_width+1) |i| {
-                    lines[line_index][i] = ' ';
+
+                // compensation padding
+                for (0 .. col_width-line_spacing) |i| {
+                    lines[line_index][line_len + i] = ' ';
                 }
         //////////////////////////////////////////////////////////////////////////////////////////////////////////////
-                std.debug.print("comp:{any} len:{any} space:{any} point:{any}\n", .{col_width-line_spacing, line_len, line_spacing, code_point});
+                // std.debug.print("comp:{any} len:{any} space:{any} point:{any}\n", .{col_width-line_spacing, line_len, line_spacing, code_point});
                 line_len = 0;
                 line_spacing = 0;
                 line_index += 1;
@@ -175,9 +176,10 @@ fn parseLines(content: []const u8) ![][line_buf_len]u8 {
             // todo: prevent exceedance of line buffer
             for (code_point, 0..) |code_unit_loc, i| {
                 _ = code_unit_loc;
-                lines[line_index][line_len + 3*i] = '_' ;
-                lines[line_index][line_len + 3*i+1] = '_' ;
-                lines[line_index][line_len + 3*i+2] = '_' ;
+                const char = ' ';
+                lines[line_index][line_len + i] = char ;
+                // lines[line_index][line_len + 3*i+1] = char ;
+                // lines[line_index][line_len + 3*i+2] = char ;
             }
             line_len += code_point_len;
             line_spacing += word_spacing + code_point_spacing;
@@ -261,7 +263,7 @@ fn generateWindowRows(
             window_rows[window_row_index][pos + i] = line[i];
         }
         ///////////////////////////////////////////
-        std.debug.print("{s}({any}/{any})\n", .{window_rows[window_row_index], pos, window_rows[window_row_index].len});
+        // std.debug.print("{s}({any}/{any})\n", .{window_rows[window_row_index], pos, window_rows[window_row_index].len});
     }
     return window_rows;
 }
