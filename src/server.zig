@@ -137,7 +137,7 @@ fn parseLines(content: []const u8) ![][line_buf_len]u8 {
 
         const code_unit = content[code_unit_index];
         const code_point_len = try utf8.codePointLength(code_unit);
-        const code_point = content[code_unit_index .. (code_unit_index + code_point_len)];
+        const code_point: []u8 = @constCast(content[code_unit_index .. (code_unit_index + code_point_len)]);
         // std.debug.print("{s}", .{code_point}); ////////////////////
 
         const code_point_spacing = try utf8.spacing(code_point);
@@ -164,25 +164,18 @@ fn parseLines(content: []const u8) ![][line_buf_len]u8 {
                 }
                 lines = lines_buf[0..line_index + 1];
             }
-            for (word, 0..) |code_unit_loc, i| {
-                lines[line_index][line_len + i] = code_unit_loc;
-            }
-            line_len += word_len;
+            
+            line_len += linesAppendSlice(lines, line_index, line_len, word);
+
             // the suffixing word separator is appended to a line even if it is exceeding the column width
-            // todo: prevent exceedance of line buffer
-            for (code_point, 0..) |code_unit_loc, i| {
-                lines[line_index][line_len + i] = code_unit_loc ;
-            }
-            line_len += code_point_len;
+            // todo: prevent exceedance of line buffe
+            line_len += linesAppendSlice(lines, line_index, line_len, code_point);
             line_spacing += word_spacing + code_point_spacing;
             word = word_buf[0..0];
             word_spacing = 0;
         } else if (try utf8.isLineSeperator(code_point)) {
 
-            for (word, 0..) |code_unit_loc, i| {
-                lines[line_index][line_len + i] = code_unit_loc;
-            }
-            line_len += word_len;
+            line_len += linesAppendSlice(lines, line_index, line_len, word);
             word_len = 0;
             word = word_buf[0..0];
             word_spacing = 0;
@@ -223,6 +216,13 @@ fn parseLines(content: []const u8) ![][line_buf_len]u8 {
     }
     line_len += word.len;
     return lines;
+}
+
+fn linesAppendSlice(lines: [][line_buf_len]u8, line_index: u64, start_index: u64, slice: []u8) u64 {
+    for (slice, 0..) |code_unit, i| {
+        lines[line_index][start_index + i] = code_unit;
+    }
+    return slice.len;
 }
 
 fn generateWindowRows(
