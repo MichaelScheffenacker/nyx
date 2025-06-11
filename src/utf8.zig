@@ -1,6 +1,20 @@
 const std = @import("std");
 
-pub fn spacing(code_point: []const u8) !u64 {
+pub fn spacing(string: []u8) !u64{
+    var space: u64 = 0;
+    var code_unit_index: u64 = 0;
+    while (code_unit_index < string.len) {
+        const code_unit = string[code_unit_index];
+        const code_point_len = try codePointLength(code_unit);
+        const pos = code_unit_index;
+        const code_point: []u8 = @constCast(string[pos .. (pos + code_point_len)]);
+        space += try codePointSpacing(code_point);
+        code_unit_index += code_point_len; 
+    }   
+    return space;
+}
+
+pub fn codePointSpacing(code_point: [] u8) !u64 {
 
     // There are a number of characters that do not occupy the space of 1 column in,
     // the terminal, potentially among others:
@@ -129,9 +143,16 @@ pub fn cp_2_unicode_point(code_point: []const u8) !u21 {
     };
 }
 
-test "utf-8 spacing" {
+test "utf-8 codePointSpacing" {
     const a = [1]u8{0x61};
     const combining_grave_accent  = [2]u8{0xCC, 0x80};
-    try std.testing.expect(try spacing(a[0..]) == 1);
-    try std.testing.expect(try spacing(combining_grave_accent[0..]) == 0);
+    try std.testing.expect(try codePointSpacing(@constCast(a[0..])) == 1);
+    try std.testing.expect(try codePointSpacing(@constCast(combining_grave_accent[0..])) == 0);
 }
+
+test "utf-8 spacing" {
+    try std.testing.expect(try spacing(@constCast("asdf")) == 4);
+    try std.testing.expect(try spacing(@constCast("äsdf")) == 4);
+    try std.testing.expect(try spacing(@constCast("g̀sdf")) == 4);
+}
+

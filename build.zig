@@ -60,7 +60,7 @@ pub fn build(b: *std.Build) void {
     run_step.dependOn(&run_cmd.step);
 
     const exe_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/server.zig"),
+        .root_source_file = b.path("src/utf8.zig"),
         .target = target,
         .optimize = optimize,
     });

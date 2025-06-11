@@ -129,7 +129,6 @@ fn parseLines(content: []const u8) ![][line_buf_len]u8 {
     var code_unit_index: u64 = 0;
     var word_buf = [1]u8{0} ** line_buf_len;
     var word: []u8 = word_buf[0..0];
-    var word_spacing: u64 = 0;
     while (code_unit_index < content.len) {
         if (line_index >= lines_buf.len - 1) {
             return error.LinesBufferFull;
@@ -140,16 +139,12 @@ fn parseLines(content: []const u8) ![][line_buf_len]u8 {
         const code_point: []u8 = @constCast(content[code_unit_index .. (code_unit_index + code_point_len)]);
         // std.debug.print("{s}", .{code_point}); ////////////////////
 
-        const code_point_spacing = try utf8.spacing(code_point);
-        // if (code_point_spacing != 1 or code_point_len != 1) {
-        //     std.debug.print("o{s} {any} {any} {X:0>4}\n", .{code_point, code_point_spacing, code_point_len, try utf8.cp_2_unicode_point(code_point)});
-        // }
+        const code_point_spacing = try utf8.codePointSpacing(code_point);
         
         // ### lines and words ###
-        var word_len = word.len;
         if (try utf8.isWordSeparator(code_point)) {
 
-            if (line_spacing + word_spacing >= col_width) {
+            if (line_spacing + try utf8.spacing(word) >= col_width) {
 
                 // compensation padding
                 for (0 .. col_width-line_spacing) |i| {
@@ -170,15 +165,12 @@ fn parseLines(content: []const u8) ![][line_buf_len]u8 {
             // the suffixing word separator is appended to a line even if it is exceeding the column width
             // todo: prevent exceedance of line buffe
             line_len += linesAppendSlice(lines, line_index, line_len, code_point);
-            line_spacing += word_spacing + code_point_spacing;
+            line_spacing += try utf8.spacing(word) + code_point_spacing;
             word = word_buf[0..0];
-            word_spacing = 0;
         } else if (try utf8.isLineSeperator(code_point)) {
 
             line_len += linesAppendSlice(lines, line_index, line_len, word);
-            word_len = 0;
             word = word_buf[0..0];
-            word_spacing = 0;
 
             // compensation padding
             for (0 .. col_width-line_spacing) |i| {
@@ -198,14 +190,14 @@ fn parseLines(content: []const u8) ![][line_buf_len]u8 {
             line_index += 1;
         
         } else {  // ### words ###
-            if (word_len + code_point_len >= line_buf_len) {
+            if (word.len + code_point_len >= line_buf_len) {
                 return error.WordBufferExhausted;
             }
-            word = word_buf[0..word_len + code_point_len];
+            const pos = word.len;
+            word = word_buf[0..word.len + code_point_len];
             for (code_point, 0..) |code_unit_loc, i| {
-                word[word_len + i] = code_unit_loc;
+                word[pos + i] = code_unit_loc;
             }
-            word_spacing += code_point_spacing;
         }
         code_unit_index += code_point_len;
 
