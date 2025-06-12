@@ -132,6 +132,8 @@ fn parseLines(content: []const u8) ![][]u8 {
     }
     var lines: [][]u8 = lines_slices[0..1];
     var line_index: u64 = 0;
+
+    var line: []u8 = lines_buf[0][0..0];
     var line_spacing: u64 = 0;
     var line_len: u64 = 0;
 
@@ -156,13 +158,14 @@ fn parseLines(content: []const u8) ![][]u8 {
             if (line_spacing + try utf8.spacing(word) >= col_width) {
 
                 // column compensation padding
-                lines[line_index] = lines_buf[line_index][0 .. line_len+col_width-line_spacing];
+                line = lines_buf[line_index][0 .. line_len+col_width-line_spacing];
                 for (0 .. col_width-line_spacing) |i| {
-                    lines[line_index][line_len + i] = ' ';
+                    line[line_len + i] = ' ';
                 }
                 // add new line
                 line_len = 0;
                 line_spacing = 0;
+                lines[line_index] = line;
                 line_index += 1;
                 if (line_index >= lines_buf.len - 1) {
                     return error.LinesBufferFull;
@@ -170,24 +173,25 @@ fn parseLines(content: []const u8) ![][]u8 {
                 lines = lines_slices[0..line_index + 1];
             }
             
-            line_len += linesAppendSlice( lines, line_index, line_len, word);
+            line_len += appendSlice( &line, line_index, line_len, word);
 
             // the suffixing word separator is appended to a line even if it is exceeding the column width
             // todo: prevent exceedance of line buffe
-            line_len += linesAppendSlice( lines, line_index, line_len, code_point);
+            line_len += appendSlice( &line, line_index, line_len, code_point);
             line_spacing += try utf8.spacing(word) + code_point_spacing;
             word = word_buf[0..0];
         } else if (try utf8.isLineSeperator(code_point)) {
 
-            line_len += linesAppendSlice( lines, line_index, line_len, word);
+            line_len += appendSlice( &line, line_index, line_len, word);
             word = word_buf[0..0];
 
             // compensation padding
-            lines[line_index] = lines_buf[line_index][0 .. line_len+col_width-line_spacing];
+            line = lines_buf[line_index][0 .. line_len+col_width-line_spacing];
             for (0 .. col_width-line_spacing) |i| {
-                lines[line_index][line_len + i] = ' ';
+                line[line_len + i] = ' ';
             }
 
+            lines[line_index] = line;
             line_index += 1;
             if (line_index >= lines_buf.len - 2) {
                 return error.LinesBufferFull;
@@ -216,16 +220,16 @@ fn parseLines(content: []const u8) ![][]u8 {
     }
     // append last word
     for (word, 0..) |code_unit_loc, i| {
-        lines[line_index][line_len + i] = code_unit_loc;
+        line[line_len + i] = code_unit_loc;
     }
     line_len += word.len;
     return lines;
 }
 
-fn linesAppendSlice(lines: [][]u8, line_index: u64, start_index: u64, slice: []u8) u64 {
-    lines[line_index] = lines_buf[line_index][0 .. start_index + slice.len];
+fn appendSlice(line: *[]u8, line_index: u64, start_index: u64, slice: []u8) u64 {
+    line.* = lines_buf[line_index][0 .. start_index + slice.len];
     for (slice, 0..) |code_unit, i| {
-        lines[line_index][start_index + i] = code_unit;
+        line.*[start_index + i] = code_unit;
     }
     return slice.len;
 }
