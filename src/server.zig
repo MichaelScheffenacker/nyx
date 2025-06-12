@@ -12,10 +12,8 @@ const col_width = 50;
 /// todo: change fixed length line buffers to a over all buffer where parts can be partitioned off for a line
 const line_buf_len = col_width * 5;
 var lines_buf = [1][line_buf_len]u8{[_]u8{0} ** line_buf_len} ** 1024;
-var window_rows_buf = [1][line_buf_len*2]u8{[_]u8{0} ** (line_buf_len*2)} ** 1024;
-
 var lines_slices: [1024]([]u8) = undefined;
-var lines: [][]u8 = undefined;
+var window_rows_buf = [1][line_buf_len*2]u8{[_]u8{0} ** (line_buf_len*2)} ** 1024;
 
 pub fn main() !void {
 
@@ -32,17 +30,14 @@ pub fn main() !void {
     var content: []const u8 = page_map.get("/a.txt") orelse "<no entry>";
     // std.debug.print("{any} {s}\n", .{content.len, content});
 
-    for (lines_slices, 0..) |_, i| {
-        lines_slices[i] = lines_buf[i][0..0];
-    }
-    lines = lines_slices[0..1];
-    try parseLines(content);
+    const lines = try parseLines(content);
 
     // for (lines, 0..) |line, i| {
     //     std.debug.print("xx{s}xx ({any}: {any})\n", .{line, i, line.len});
     // }
 
     const window_rows = try generateWindowRows(
+        lines,
         2,
         3,
         12,
@@ -131,8 +126,11 @@ fn listPages(page_map: *std.StringHashMap([]const u8)) void {
     }
 }
 
-fn parseLines(content: []const u8) !void {
-    
+fn parseLines(content: []const u8) ![][]u8 {
+    for (lines_slices, 0..) |_, i| {
+        lines_slices[i] = lines_buf[i][0..0];
+    }
+    var lines: [][]u8 = lines_slices[0..1];
     var line_index: u64 = 0;
     var line_spacing: u64 = 0;
     var line_len: u64 = 0;
@@ -172,16 +170,16 @@ fn parseLines(content: []const u8) !void {
                 lines = lines_slices[0..line_index + 1];
             }
             
-            line_len += linesAppendSlice( line_index, line_len, word);
+            line_len += linesAppendSlice( lines, line_index, line_len, word);
 
             // the suffixing word separator is appended to a line even if it is exceeding the column width
             // todo: prevent exceedance of line buffe
-            line_len += linesAppendSlice( line_index, line_len, code_point);
+            line_len += linesAppendSlice( lines, line_index, line_len, code_point);
             line_spacing += try utf8.spacing(word) + code_point_spacing;
             word = word_buf[0..0];
         } else if (try utf8.isLineSeperator(code_point)) {
 
-            line_len += linesAppendSlice( line_index, line_len, word);
+            line_len += linesAppendSlice( lines, line_index, line_len, word);
             word = word_buf[0..0];
 
             // compensation padding
@@ -221,9 +219,10 @@ fn parseLines(content: []const u8) !void {
         lines[line_index][line_len + i] = code_unit_loc;
     }
     line_len += word.len;
+    return lines;
 }
 
-fn linesAppendSlice(line_index: u64, start_index: u64, slice: []u8) u64 {
+fn linesAppendSlice(lines: [][]u8, line_index: u64, start_index: u64, slice: []u8) u64 {
     lines[line_index] = lines_buf[line_index][0 .. start_index + slice.len];
     for (slice, 0..) |code_unit, i| {
         lines[line_index][start_index + i] = code_unit;
@@ -232,15 +231,12 @@ fn linesAppendSlice(line_index: u64, start_index: u64, slice: []u8) u64 {
 }
 
 fn generateWindowRows(
+    lines: [][]u8,
     col_count: u64,
     col_gap: u64,
     lines_per_col: u64,
     selis_gap: u64
     ) ![][]u8 {
-    // _ = col_count;
-    // _ = col_gap;
-    // _ = lines_per_col;
-    // _ = selis_gap;
     var rows_slices: [1024]([]u8) = undefined;
     for (rows_slices, 0..) |_, i| {
         rows_slices[i] = window_rows_buf[i][0..0];
@@ -248,7 +244,6 @@ fn generateWindowRows(
     var window_rows: [][]u8 = rows_slices[0..0];
     var row_offset: u64 = 0;
     for (lines, 0..) |line, line_indx| {
-        // _ = line;
 
         var window_row_index = row_offset + (line_indx / (lines_per_col*col_count)) * lines_per_col + line_indx % lines_per_col;
         const col_of_line = (line_indx/lines_per_col) % col_count;
