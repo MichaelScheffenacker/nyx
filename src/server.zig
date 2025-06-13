@@ -134,7 +134,6 @@ fn parseLines(content: []const u8) ![][]u8 {
     var line_index: u64 = 0;
 
     var line: []u8 = lines_buf[0][0..0];
-    var line_spacing: u64 = 0;
 
     var code_unit_index: u64 = 0;
     var word_buf = [1]u8{0} ** line_buf_len;
@@ -150,12 +149,10 @@ fn parseLines(content: []const u8) ![][]u8 {
         const code_point_len = try utf8.codePointLength(code_unit);
         const code_point: []u8 = @constCast(content[code_unit_index .. (code_unit_index + code_point_len)]);
         // std.debug.print("{s}", .{code_point}); ////////////////////
-
-        const code_point_spacing = try utf8.codePointSpacing(code_point);
         
         // ### lines and words ###
         if (try utf8.isWordSeparator(code_point)) {
-
+            const line_spacing = try utf8.spacing(line);
             if (line_spacing + try utf8.spacing(word) >= col_width) {
 
                 // column compensation padding
@@ -163,7 +160,6 @@ fn parseLines(content: []const u8) ![][]u8 {
                 line = appendSlice(line, padding);
 
                 // add new line
-                line_spacing = 0;
                 lines[line_index] = line;
                 line_index += 1;
                 if (line_index >= lines_buf.len - 1) {
@@ -178,14 +174,14 @@ fn parseLines(content: []const u8) ![][]u8 {
             // the suffixing word separator is appended to a line even if it is exceeding the column width
             // todo: prevent exceedance of line buffe
             line = appendSlice( line,  code_point);
-            line_spacing += try utf8.spacing(word) + code_point_spacing;
             word = word_buf[0..0];
         } else if (try utf8.isLineSeperator(code_point)) {
 
             line = appendSlice( line, word);
             word = word_buf[0..0];
 
-            // compensation padding
+            // column compensation padding
+            const line_spacing = try utf8.spacing(line);
             const padding = @constCast(padding_buffer[0 .. col_width-line_spacing]);
             line = appendSlice(line, padding);
 
@@ -199,11 +195,11 @@ fn parseLines(content: []const u8) ![][]u8 {
             lines[line_index][0] = ' ';  // add additional empty line
 
             // new line
-            line_spacing = 0;
             line_index += 1;
             line = lines_buf[line_index][0..0];
         
         } else {  // ### words ###
+            // todo: words can be longer than lines
             if (word.len + code_point_len >= line_buf_len) {
                 return error.WordBufferExhausted;
             }
