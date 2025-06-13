@@ -139,6 +139,8 @@ fn parseLines(content: []const u8) ![][]u8 {
     var code_unit_index: u64 = 0;
     var word_buf = [1]u8{0} ** line_buf_len;
     var word: []u8 = word_buf[0..0];
+
+    const padding_buffer: [line_buf_len]u8 = [1]u8{' '} ** line_buf_len;
     while (code_unit_index < content.len) {
         if (line_index >= lines_buf.len - 1) {
             return error.LinesBufferFull;
@@ -157,11 +159,9 @@ fn parseLines(content: []const u8) ![][]u8 {
             if (line_spacing + try utf8.spacing(word) >= col_width) {
 
                 // column compensation padding
-                const pos = line.len;
-                line.len += col_width-line_spacing;
-                for (0 .. col_width-line_spacing) |i| {
-                    line[pos + i] = ' ';
-                }
+                const padding = @constCast(padding_buffer[0 .. col_width-line_spacing]);
+                line = appendSlice(line, padding);
+
                 // add new line
                 line_spacing = 0;
                 lines[line_index] = line;
@@ -186,11 +186,8 @@ fn parseLines(content: []const u8) ![][]u8 {
             word = word_buf[0..0];
 
             // compensation padding
-            const pos = line.len;
-            line.len += col_width-line_spacing;
-            for (0 .. col_width-line_spacing) |i| {
-                line[pos + i] = ' ';
-            }
+            const padding = @constCast(padding_buffer[0 .. col_width-line_spacing]);
+            line = appendSlice(line, padding);
 
             lines[line_index] = line;
             line_index += 1;
