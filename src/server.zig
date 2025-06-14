@@ -130,8 +130,7 @@ fn parseLines(content: []const u8) ![][]u8 {
     for (lines_slices, 0..) |_, i| {
         lines_slices[i] = lines_buf[i][0..0];
     }
-    var lines: [][]u8 = lines_slices[0..1];
-    var line_index: u64 = 0;
+    var lines: [][]u8 = lines_slices[0..0];
 
     var line: []u8 = lines_buf[0][0..0];
 
@@ -141,34 +140,26 @@ fn parseLines(content: []const u8) ![][]u8 {
 
     const padding_buffer: [line_buf_len]u8 = [1]u8{' '} ** line_buf_len;
     while (code_unit_index < content.len) {
-        if (line_index >= lines_buf.len - 1) {
-            return error.LinesBufferFull;
-        }
 
         const code_unit = content[code_unit_index];
         const code_point_len = try utf8.codePointLength(code_unit);
         const code_point: []u8 = @constCast(content[code_unit_index .. (code_unit_index + code_point_len)]);
-        // std.debug.print("{s}", .{code_point}); ////////////////////
         
         // ### lines and words ###
         if (try utf8.isWordSeparator(code_point)) {
             const line_spacing = try utf8.spacing(line);
             if (line_spacing + try utf8.spacing(word) >= col_width) {
 
-                // column compensation padding
+                // add column compensation padding
                 const padding = @constCast(padding_buffer[0 .. col_width-line_spacing]);
                 line = try appendSlice(line, padding, line_buf_len);
 
-                // add new line
-                lines[line_index] = line;
-                line_index += 1;
-                if (line_index >= lines_buf.len - 1) {
-                    return error.LinesBufferFull;
-                }
-                lines = lines_slices[0..line_index + 1];
-                line = lines_buf[line_index][0..0];
+                // new line
+                lines = try appendLine(lines, line, lines_slices.len);
+                line = lines_buf[lines.len][0..0];
             }
             
+            // add word
             line = try appendSlice( line,  word, line_buf_len);
 
             // the suffixing word separator is appended to a line even if it is exceeding the column width
@@ -177,6 +168,7 @@ fn parseLines(content: []const u8) ![][]u8 {
             word = word_buf[0..0];
         } else if (try utf8.isLineSeperator(code_point)) {
 
+            // add word
             line = try appendSlice( line, word, line_buf_len);
             word = word_buf[0..0];
 
@@ -185,24 +177,14 @@ fn parseLines(content: []const u8) ![][]u8 {
             const padding = @constCast(padding_buffer[0 .. col_width-line_spacing]);
             line = try appendSlice(line, padding, line_buf_len);
 
-            lines[line_index] = line;
-            line_index += 1;
-            if (line_index >= lines_buf.len - 2) {
-                return error.LinesBufferFull;
-            }
-            lines = lines_slices[0..line_index + 2];
-            lines[line_index] = lines_buf[line_index][0..1];
-            lines[line_index][0] = ' ';  // add additional empty line
-
-            // new line
-            line_index += 1;
-            line = lines_buf[line_index][0..0];
+            lines = try appendLine(lines, line, lines_slices.len);
+            // todo: there might be an inconsitency with col_width/col_width-1 somewhere.
+            const additional_empty_line = @constCast(padding_buffer[0 .. col_width]);
+            lines = try appendLine(lines, additional_empty_line, lines_slices.len);
+            line = lines_buf[lines.len][0..0];
         
         } else {  // ### words ###
-            // todo: words can be longer than lines
-            if (word.len + code_point_len >= line_buf_len) {
-                return error.WordBufferExhausted;
-            }
+            // add word  // todo: words can be longer than lines
             word = try appendSlice(word, code_point, word_buf.len);
         }
         code_unit_index += code_point_len;
@@ -212,6 +194,16 @@ fn parseLines(content: []const u8) ![][]u8 {
     line = try appendSlice(line, word, line_buf_len);
 
     return lines;
+}
+
+fn appendLine(dest: [][]u8, src: []u8, max_len: u64) ![][]u8 {
+    if (dest.len + 1 > max_len) {
+        return error.MaxLenExceeded;
+    }
+    var new_slice = dest;
+    new_slice.len += 1;
+    new_slice[dest.len] = src;
+    return new_slice;
 }
 
 fn appendSlice(dest: []u8, src: []u8, max_len: u64) ![]u8 {
