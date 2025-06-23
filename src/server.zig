@@ -22,7 +22,7 @@ pub fn main() !void {
     try content.display(file_content);
 
     const len: usize = 400;
-    var buf = [_]u8{0} ** len;
+    var buf = [1]u8{0} ** len;
     
     const client_ipv6_addr = 0x0000_0000_0000_0000_0000_0000_0000_0000;
     const listen_socket = try PosixSocketFacade.create();
